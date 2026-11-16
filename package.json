@@ -45,7 +45,16 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "build": "expo export --platform ios",
-    "test": "jest --ci"
+    "test": "jest --ci",
+    "postinstall": "node ./scripts/patch-expo-metro-image-size.cjs"
+  },
+  "overrides": {
+    "decode-uri-component": "0.5.1",
+    "glob@13.0.7": "14.0.6",
+    "image-size@1.2.1": "2.1.0",
+    "minimatch@10.2.6": "11.0.8",
+    "minimatch@9.0.9": "11.0.8",
+    "postcss@8.4.49": "8.5.32"
   },
   "jest": {
     "preset": "jest-expo"

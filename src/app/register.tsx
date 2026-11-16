@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import {
+  Pressable,
+  Text,
+  TextInput,
+  type TextInputInstance,
+  View,
+} from "react-native";
 import { router, type Href } from "expo-router";
 import { AuthShell, authStyles } from "../components/auth-shell";
 import {
@@ -10,7 +16,7 @@ import {
 import React from "react";
 
 export default function RegisterScreen() {
-  const passwordInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInputInstance>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -57,7 +63,11 @@ export default function RegisterScreen() {
           autoCorrect={false}
           editable={!submitting}
           onChangeText={setUsername}
-          onSubmitEditing={() => passwordInputRef.current?.focus()}
+          onSubmitEditing={() =>
+            TextInput.State.focusTextInput(
+              passwordInputRef.current?.getNativeRef(),
+            )
+          }
           returnKeyType="next"
           style={authStyles.input}
           textContentType="username"

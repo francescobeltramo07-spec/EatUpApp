@@ -12,6 +12,15 @@ describe("EatUp authentication transport", () => {
     );
   });
 
+  it("uses a configured HTTPS API origin on the default port 443", () => {
+    expect(resolveApiOrigin("https://eatup.example.test:443")).toBe(
+      "https://eatup.example.test",
+    );
+    expect(resolveApiOrigin("https://eatup.example.test")).toBe(
+      "https://eatup.example.test",
+    );
+  });
+
   it("fails closed before making a request when the API origin is missing", () => {
     const fetcher = jest.fn() as unknown as typeof fetch;
 
@@ -124,9 +133,11 @@ describe("EatUp authentication transport", () => {
 
   it.each([
     "http://eatup.example.test:3000",
-    "https://eatup.example.test",
+    "https://eatup.example.test:3001",
     "https://user:password@eatup.example.test:3000",
     "https://eatup.example.test:3000/api",
+    "https://eatup.example.test:3000?query=1",
+    "https://eatup.example.test:3000#fragment",
   ])("rejects an unsafe or malformed API origin: %s", (origin) => {
     expect(() => resolveApiOrigin(origin)).toThrow(ApiConfigurationError);
   });

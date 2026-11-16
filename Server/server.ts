@@ -13,8 +13,9 @@ import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import path from "path";
 import cookieParser from "cookie-parser"
-import { GoogleGenAI } from "@google/genai";
-import nodemailer from "nodemailer";
+import { OAuth2Client } from "google-auth-library";
+import { rateLimit } from "express-rate-limit";
+import Groq from "groq-sdk";
 
 //b. callback
 const app: express.Express = express();
@@ -24,11 +25,52 @@ const connectionString = process.env.connectionStringLocal;  //process.env.conne
 const dbName = process.env.dbName;
 //const PORT = parseInt(process.env.PORT!);
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT!);
-const googleOAuth = JSON.parse(process.env.googleOAuth!);
 const FOOD_NOT_FOUND_IMAGE = "/foodNotFound.png";
-const TEXT_AI_MODEL = process.env.VERTEX_AI_MODEL || "gemini-2.5-flash";
-const RECIPE_IMAGE_MODEL = process.env.VERTEX_AI_IMAGE_MODEL || "imagen-4.0-ultra-generate-001";
+const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 const recipeImageCache = new Map<string, string>();
+const googleAuthClient = new OAuth2Client();
+let groqClient: Groq | undefined;
+let mongoClient: MongoClient | undefined;
+let mongoClientConnection: Promise<MongoClient> | undefined;
+
+async function getMongoClient() {
+    if (!connectionString) {
+        throw new Error("MongoDB connection string is not configured");
+    }
+
+    if (!mongoClient) {
+        mongoClient = new MongoClient(connectionString);
+    }
+
+    if (!mongoClientConnection) {
+        const client = mongoClient;
+        mongoClientConnection = client.connect().then(() => client).catch((err) => {
+            mongoClientConnection = undefined;
+            throw err;
+        });
+    }
+
+    return mongoClientConnection;
+}
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+const registerLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 3,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+const aiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 5,
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 //c. configurazione e avvio del server http
 // const server = http.createServer(app);
@@ -53,16 +95,14 @@ const certificate = fs.readFileSync("keys/certificate.crt", "utf8");
 const credentials = { "key": privateKey, "cert": certificate }
 const jwtKey = fs.readFileSync("keys/jwtKey", "utf8")
 
-let httpsServer = https.createServer(credentials, app);
-httpsServer.listen(HTTPS_PORT, function () {
-    console.log("Server in ascolto sulla porta HTTPS:" + HTTPS_PORT)
-});
+const httpsServer = https.createServer(credentials, app);
+httpsServer.listen(HTTPS_PORT);
 
 //d. middleware
 // 1. log della richiesta
 // in app.use() se ometto la risorsa, vuol dire che richiama '/'
 app.use('/', function (req, res, next) {
-    console.log(`${req.method} : ${req.originalUrl}`);
+    console.log(`${req.method} ${req.path}`);
     next();
 });
 
@@ -77,21 +117,16 @@ app.use('/', express.json({ 'limit': '5mb' }));
 // 4. gestione dei parametri GET
 app.use('/', queryStringParcer);
 
-// 5. log dei parametri post, non get perchè sono già visibili nel 1o middleware
-app.use('/', function (req: any, res: any, next: any) {
-    if (req.body && Object.keys(req.body).length > 0) {
-        console.log("    parametri body: " + JSON.stringify(req.body));
-    }
-    if (req.query && Object.keys(req.query).length > 0) {
-        console.log("    parametri query: " + JSON.stringify(req.query));
-    }
-    next();
-});
-
 // 6. vincoli CORS
+const allowedOrigins = new Set(
+    (process.env.CORS_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
+);
 const corsOptions = {
-    origin: function (origin: any, callback: any) {
-        return callback(null, true);
+    origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+        if (!origin || allowedOrigins.has(origin)) {
+            return callback(null, true);
+        }
+        return callback(null, false);
     },
     credentials: true
 };
@@ -111,145 +146,118 @@ const cookiesOpsions: CookieOptions = {
 }
 
 //1. login
-app.post('/api/login', async function (req, res, next) {
-    let username = req.body.username;
-    let password = req.body.password;
-    const client = new MongoClient(connectionString!);
-    await client.connect().catch(err => {
-        res.status(503).send("Errore di connessione al database");
-        return;
-    });
-    const db = client.db(dbName);
-    const collection = client.db(dbName).collection("users");
-    const cmd = collection.findOne({ "username": username });
-    cmd.then(function (dbUser) {
-        if (!dbUser) {
-            res.status(401).send("Username non valido");
-        } else {
-            console.log("Password ricevuta: ", password, "Password DB: ", dbUser.password)
-            bcrypt.compare(password, dbUser.password, function (err, ok) {
-                if (err) {
-                    res.status(500).send("bcrypt execution error");
-                    console.log(err.stack);
-                } else if (!ok) {
-                    res.status(401).send("Password non valida")
-                } else {
-                    const TOKEN = createToken(dbUser)
-                    res.cookie("TOKEN", TOKEN, cookiesOpsions)
-                    res.send({ _id: dbUser._id })
-                }
-            })
-        }
-    });
-    cmd.catch(function (err) {
-        res.status(500).send("Errore lettura collezioni" + err);
-    });
-    cmd.finally(function () {
-        client.close();
-    });
-});
-
-app.post('/api/loginWithGoogle', async function (req, res, next) {
-    const googleToken:any = req.body.googleToken;
-    const payloadGoogleToken:any = jwt.decode(googleToken)
-    console.log("Google token", payloadGoogleToken)
-    const client = new MongoClient(connectionString!);
-    await client.connect().catch(function(err){
-        res.status(503).send("Errore di connessione al database");
-        return;
-    });
-    const collection = client.db(dbName).collection("users");
-    const cmd = collection.findOne({ "username": payloadGoogleToken?.email });
-    cmd.catch(function (err) {
-        res.status(500).send("Errore lettura collezioni" + err);
-        client.close();
-    })
-    cmd.then(function (dbUser) {
-        if (!dbUser) {
-            // se l'utente non esiste lo creo
-            let password = ""
-            for (let i = 0; i < 12; i++) {
-                password += String.fromCharCode(Math.floor(Math.random() * 26) + 65)
-            }
-            const newUser:any = {
-                username: payloadGoogleToken.email,
-                password: bcrypt.hashSync(password, 10), // non serve perchè l'autenticazione avviene tramite google
-                oldPassword: password
-            }
-            const cmd2 = collection.insertOne(newUser)
-            cmd2.catch(function(err){
-                res.status(500).send("Errore lettura collezioni" + err);
-            })
-            cmd2.then(function(mongoResponse){
-                newUser._id = mongoResponse.insertedId.toString()
-                sendGmail(payloadGoogleToken.email,password).catch((err: any) => {
-                    console.log("Errore invio email Google login", err);
-                })
-                let TOKEN = createToken(newUser);
-                res.cookie("TOKEN", TOKEN, cookiesOpsions)
-                res.send({username: payloadGoogleToken.email})
-            })
-            cmd2.finally(function(){
-                client.close()
-            })
-        }else{
-            let TOKEN = createToken(dbUser);
-            res.cookie("TOKEN", TOKEN, cookiesOpsions)
-            res.send({username: payloadGoogleToken.email})
-        }
-    });
-});
-
-async function sendGmail(email:string,password:string){
-    let message = fs.readFileSync("./message.html", "utf-8")
-    message = message.replace("__user",email)
-    message = message.replace("__password",password)
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: googleOAuth
-    })
-
-    await transporter.sendMail({
-        from: `"EatUp" <${googleOAuth.user}>`,
-        to: email,
-        subject: "Benvenuto su EatUp",
-        html: message
-    })
-}
-
-
-
-// Registrazione
-app.post('/api/register', async function (req, res) {
-    const username = req.body.username;
-    const password = req.body.password;
-
-    const client = new MongoClient(connectionString!);
+app.post('/api/login', loginLimiter, async function (req, res) {
+    const username = req.body?.username;
+    const password = req.body?.password;
+    let client: MongoClient;
 
     try {
-        await client.connect();
-        const db = client.db(dbName);
-        const collection = db.collection("users");
+        client = await getMongoClient();
+    } catch {
+        return res.status(503).send("Errore di connessione al database");
+    }
 
-        const dbUser = await collection.findOne({ username: username });
+    try {
+        const dbUser = await client.db(dbName).collection("users").findOne({ username });
+        if (!dbUser) {
+            return res.status(401).send("Username non valido");
+        }
+        if (typeof password !== "string" || typeof dbUser.password !== "string") {
+            return res.status(401).send("Password non valida");
+        }
 
+        const isPasswordValid = await bcrypt.compare(password, dbUser.password);
+        if (!isPasswordValid) {
+            return res.status(401).send("Password non valida");
+        }
+
+        const TOKEN = createToken(dbUser);
+        res.cookie("TOKEN", TOKEN, cookiesOpsions);
+        return res.send({ _id: dbUser._id, token: TOKEN });
+    } catch {
+        return res.status(500).send("Errore lettura collezioni");
+    }
+});
+
+app.post('/api/loginWithGoogle', async function (req, res) {
+    const googleToken = req.body?.googleToken;
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    if (typeof googleToken !== "string" || !googleClientId) {
+        return res.status(401).send("Token Google non valido");
+    }
+
+    let email: string;
+    try {
+        const ticket = await googleAuthClient.verifyIdToken({
+            idToken: googleToken,
+            audience: googleClientId
+        });
+        const payload = ticket.getPayload();
+        if (!payload?.email || payload.email_verified !== true) {
+            return res.status(401).send("Token Google non valido");
+        }
+        email = payload.email;
+    } catch {
+        return res.status(401).send("Token Google non valido");
+    }
+
+    let client: MongoClient;
+    try {
+        client = await getMongoClient();
+    } catch {
+        return res.status(503).send("Errore di connessione al database");
+    }
+
+    try {
+        const collection = client.db(dbName).collection("users");
+        let dbUser = await collection.findOne({ username: email });
+        if (!dbUser) {
+            const newUser = { username: email };
+            const result = await collection.insertOne(newUser);
+            dbUser = { ...newUser, _id: result.insertedId };
+        }
+
+        const TOKEN = createToken(dbUser);
+        res.cookie("TOKEN", TOKEN, cookiesOpsions);
+        return res.send({ username: email, token: TOKEN });
+    } catch {
+        return res.status(500).send("Errore lettura collezioni");
+    }
+});
+
+// Registrazione
+app.post('/api/register', registerLimiter, async function (req, res) {
+    const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+    const password = req.body?.password;
+    if (
+        username.length < 3 ||
+        username.length > 254 ||
+        typeof password !== "string" ||
+        password.length < 8 ||
+        Buffer.byteLength(password, "utf8") > 72
+    ) {
+        return res.status(400).send("Username o password non validi");
+    }
+
+    try {
+        const client = await getMongoClient();
+        const collection = client.db(dbName).collection("users");
+        const dbUser = await collection.findOne({ username });
         if (dbUser) {
             return res.status(401).send("Username già esistente");
         }
 
         const newUser = {
-            username: username,
-            password: bcrypt.hashSync(password, 10)
+            username,
+            password: await bcrypt.hash(password, 10)
         };
-
         const result = await collection.insertOne(newUser);
-
-        return res.send({ _id: result.insertedId });
-
-    } catch (err) {
-        return res.status(500).send("Errore server: " + err);
-    } finally {
-        await client.close();
+        const user = { ...newUser, _id: result.insertedId };
+        const TOKEN = createToken(user);
+        res.cookie("TOKEN", TOKEN, cookiesOpsions);
+        return res.send({ _id: result.insertedId, token: TOKEN });
+    } catch {
+        return res.status(500).send("Errore server");
     }
 });
 
@@ -266,63 +274,62 @@ app.post("/api/logout", function (req, res, next) {
 app.get('/api/getIngredients', async function (req: any, res: any) {
     const currentCollection: string = "ingredienti"
 
-    const client = new MongoClient(connectionString!);
-    await client.connect().catch((err: any) => {
-        res.status(503).send("Errore di connessione al database");
-        return;
-    });
-    const collection = client.db(dbName).collection(currentCollection);
-    const cmd = collection.find({}).toArray();
-    cmd.then(function (data: any) {
-        res.send(data);
-    });
-    cmd.catch(function (err: any) {
-        res.status(500).send("Errore lettura collezioni" + err);
-    });
-    cmd.finally(function () {
-        client.close();
-    });
+    let client: MongoClient;
+    try {
+        client = await getMongoClient();
+    } catch {
+        return res.status(503).send("Errore di connessione al database");
+    }
+
+    try {
+        const collection = client.db(dbName).collection(currentCollection);
+        const data = await collection.find({}).toArray();
+        return res.send(data);
+    } catch {
+        return res.status(500).send("Errore lettura collezioni");
+    }
 });
 
 //2. controllo token
 //controllo su tutte le richieste che iniziano per /api se il token è valido
 app.use("/api", function (req:any, res, next) {
-    //vediamo se nella collezione dei cookies c'è un cookie che si chaima token
-    if (!req.cookies || !req.cookies.TOKEN) {
-        res.status(403).send("Token mancante")
+    const authorization = req.get("authorization");
+    const bearerToken = typeof authorization === "string"
+        ? authorization.match(/^Bearer\s+(.+)$/i)?.[1]
+        : undefined;
+    const token = req.cookies?.TOKEN ?? bearerToken;
+    if (!token) {
+        return res.status(403).send("Token mancante")
     } else {
-        let token = req.cookies.TOKEN
-        jwt.verify(token, jwtKey, function (err: any, payload: any) {
+        jwt.verify(token, jwtKey, { algorithms: ["HS256"] }, function (err: any, payload: any) {
             if (err) {
-                res.status(403).send("Token scaduto o non valido")
+                return res.status(403).send("Token scaduto o non valido")
             } else {
                 const newToken = createToken(payload)
                 res.cookie("TOKEN", newToken, cookiesOpsions)
                 req["username"] = payload.username
-                next();
+                return next();
             }
         })
 
     }
 })
 
-app.post('/api/generateWeekProgram', async function (req: any, res: any) {
+app.post('/api/generateWeekProgram', aiLimiter, async function (req: any, res: any) {
     const calorie = Number(req.body?.calorie);
 
     if (!calorie || calorie <= 0) {
         return res.status(400).send("Le calorie sono obbligatorie");
     }
 
-    if (!process.env.GOOGLE_CLOUD_PROJECT) {
-        return res.status(500).send("GOOGLE_CLOUD_PROJECT non configurato nel file .env");
+    if (!process.env.GROQ_API_KEY) {
+        return res.status(500).send("GROQ_API_KEY non configurato nel file .env");
     }
 
-    const vertexAI = createVertexAIClient();
-
     try {
-        const response = await vertexAI.models.generateContent({
-            model: TEXT_AI_MODEL,
-            contents: JSON.stringify({
+        const generatedProgram = await generateJson(
+            "Sei un nutrizionista digitale per EatUp. Genera solo programmi alimentari realistici e vari, senza diagnosi mediche.",
+            {
                 richiesta: "Crea un programma alimentare in JSON per 7 date consecutive con colazione, pranzo, merenda e cena. Non usare nomi dei giorni della settimana.",
                 vincoli: {
                     calorieGiornaliere: calorie,
@@ -333,43 +340,39 @@ app.post('/api/generateWeekProgram', async function (req: any, res: any) {
                     preferenze: req.body?.preferenze ?? "",
                     intolleranze: req.body?.intolleranze ?? ""
                 }
-            }),
-            config: {
-                systemInstruction: "Sei un nutrizionista digitale per EatUp. Genera solo programmi alimentari realistici e vari, senza diagnosi mediche.",
-                responseMimeType: "application/json",
-                responseJsonSchema: {
-                    type: "object",
-                    additionalProperties: false,
-                    required: ["days"],
-                    properties: {
-                        days: {
-                            type: "array",
-                            minItems: 7,
-                            maxItems: 7,
-                            items: {
-                                type: "object",
-                                additionalProperties: false,
-                                required: ["colazione", "pranzo", "merenda", "cena"],
-                                properties: {
-                                    colazione: { type: "string" },
-                                    pranzo: { type: "string" },
-                                    merenda: { type: "string" },
-                                    cena: { type: "string" }
-                                }
+            },
+            "weekly_program",
+            {
+                type: "object",
+                additionalProperties: false,
+                required: ["days"],
+                properties: {
+                    days: {
+                        type: "array",
+                        minItems: 7,
+                        maxItems: 7,
+                        items: {
+                            type: "object",
+                            additionalProperties: false,
+                            required: ["colazione", "pranzo", "merenda", "cena"],
+                            properties: {
+                                colazione: { type: "string" },
+                                pranzo: { type: "string" },
+                                merenda: { type: "string" },
+                                cena: { type: "string" }
                             }
                         }
                     }
                 }
-            }
-        });
+            },
+            0.2
+        );
 
-        const generatedProgram = parseVertexJson(response.text);
         const weekProgram = buildDatedWeekProgram(generatedProgram, req.body);
         await saveWeekProgram(req.username, weekProgram);
 
         return res.send(weekProgram);
     } catch (err: any) {
-        console.log("Errore generazione programma settimanale", err);
         return res.status(500).send("Errore durante la generazione del programma settimanale");
     }
 });
@@ -380,7 +383,6 @@ app.get('/api/weekProgram', async function (req: any, res: any) {
 
         return res.send(program ?? { days: [] });
     } catch (err: any) {
-        console.log("Errore lettura programma settimanale", err);
         return res.status(500).send("Errore durante il recupero del programma settimanale");
     }
 });
@@ -390,7 +392,6 @@ app.get('/api/generatedRecipes', async function (req: any, res: any) {
         const recipes = await getLatestGeneratedRecipes(req.username);
         return res.send(recipes?.groups ?? {});
     } catch (err: any) {
-        console.log("Errore lettura ricette generate", err);
         return res.status(500).send("Errore durante il recupero delle ricette salvate");
     }
 });
@@ -400,12 +401,11 @@ app.get('/api/shoppingList', async function (req: any, res: any) {
         const shoppingList = await getLatestShoppingList(req.username);
         return res.send(shoppingList ?? { categories: [] });
     } catch (err: any) {
-        console.log("Errore lettura lista spesa", err);
         return res.status(500).send("Errore durante il recupero della lista della spesa");
     }
 });
 
-app.post('/api/generateShoppingList', async function (req: any, res: any) {
+app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: any) {
     try {
         const availableIngredients = normalizeStringArray(req.body?.availableIngredients);
         const latestWeekProgram = await getLatestWeekProgram(req.username);
@@ -441,17 +441,16 @@ app.post('/api/generateShoppingList', async function (req: any, res: any) {
             });
         }
 
-        if (!process.env.GOOGLE_CLOUD_PROJECT) {
-            return res.status(500).send("GOOGLE_CLOUD_PROJECT non configurato nel file .env");
+        if (!process.env.GROQ_API_KEY) {
+            return res.status(500).send("GROQ_API_KEY non configurato nel file .env");
         }
 
         const recipeSourceIngredients = normalizeStringArray(latestRecipes?.sourceIngredients);
         const ownedIngredients = uniqueStrings([...availableIngredients, ...recipeSourceIngredients]);
         const recipesForShoppingList = hasRecipes ? compactRecipesForShoppingList(latestRecipes.groups) : {};
-        const vertexAI = createVertexAIClient();
-        const response = await vertexAI.models.generateContent({
-            model: TEXT_AI_MODEL,
-            contents: JSON.stringify({
+        const shoppingList = await generateJson(
+            "Sei l'assistente spesa di EatUp. Genera una lista concreta, ordinata per categoria e senza ingredienti gia disponibili.",
+            {
                 richiesta: "Crea una lista della spesa automatica in italiano partendo dalle ricette generate e dal programma settimanale.",
                 ingredientiGiaDisponibili: ownedIngredients,
                 programmaSettimanale: hasWeekProgram ? latestWeekProgram.days : [],
@@ -464,18 +463,15 @@ app.post('/api/generateShoppingList', async function (req: any, res: any) {
                     "Ordina gli elementi per categorie da supermercato: Frutta e verdura, Pane pasta e cereali, Carne pesce e uova, Latticini, Dispensa, Surgelati, Altro.",
                     "Nel motivo indica in modo breve se serve per ricette, programma settimanale o entrambi."
                 ]
-            }),
-            config: {
-                temperature: 0.2,
-                systemInstruction: "Sei l'assistente spesa di EatUp. Genera una lista concreta, ordinata per categoria e senza ingredienti gia disponibili.",
-                responseMimeType: "application/json",
-                responseJsonSchema: shoppingListSchema()
-            }
-        });
+            },
+            "shopping_list",
+            shoppingListSchema(),
+            0.2
+        );
 
-        const shoppingList = normalizeShoppingList(parseVertexJson(response.text));
+        const normalizedShoppingList = normalizeShoppingList(shoppingList);
         const shoppingListResponse = {
-            ...shoppingList,
+            ...normalizedShoppingList,
             sources: {
                 weekProgram: hasWeekProgram,
                 recipes: hasRecipes
@@ -489,12 +485,11 @@ app.post('/api/generateShoppingList', async function (req: any, res: any) {
 
         return res.send(shoppingListResponse);
     } catch (err: any) {
-        console.log("Errore generazione lista spesa", err);
         return res.status(500).send("Errore durante la generazione della lista della spesa");
     }
 });
 
-app.post('/api/generateRecipesFromIngredients', async function (req: any, res: any) {
+app.post('/api/generateRecipesFromIngredients', aiLimiter, async function (req: any, res: any) {
     const ingredients = Array.isArray(req.body?.ingredients)
         ? req.body.ingredients.map((ingredient: any) => String(ingredient).trim()).filter((ingredient: string) => ingredient.length > 0)
         : [];
@@ -503,8 +498,8 @@ app.post('/api/generateRecipesFromIngredients', async function (req: any, res: a
         return res.status(400).send("Seleziona almeno un ingrediente");
     }
 
-    if (!process.env.GOOGLE_CLOUD_PROJECT) {
-        return res.status(500).send("GOOGLE_CLOUD_PROJECT non configurato nel file .env");
+    if (!process.env.GROQ_API_KEY) {
+        return res.status(500).send("GROQ_API_KEY non configurato nel file .env");
     }
 
     const savedRecipes = await getLatestGeneratedRecipes(req.username);
@@ -520,12 +515,10 @@ app.post('/api/generateRecipesFromIngredients', async function (req: any, res: a
         });
     }
 
-    const vertexAI = createVertexAIClient();
-
     try {
-        const response = await vertexAI.models.generateContent({
-            model: TEXT_AI_MODEL,
-            contents: JSON.stringify({
+        const recipes = await generateJson(
+            "Sei lo chef digitale di EatUp. Suggerisci solo ricette vere, realistiche e cucinabili in italiano. Privilegia piatti riconoscibili, ingredienti compatibili e preparazioni sensate. Non inventare ricette finte.",
+            {
                 richiesta: "Genera solo ricette vere, riconoscibili e cucinabili, divise in tre gruppi: solo ingredienti selezionati, ricette con 2 o 3 ingredienti extra, ricette con piu ingredienti da comprare ma molto valide.",
                 ingredientiSelezionati: ingredients,
                 regole: [
@@ -540,66 +533,90 @@ app.post('/api/generateRecipesFromIngredients', async function (req: any, res: a
                     "Le ricette del gruppo daComprare possono indicare piu ingredienti extra, ma devono spiegare perche vale la pena.",
                     "Se per un gruppo non esistono ricette vere e plausibili, restituisci un array vuoto invece di forzare una ricetta inventata."
                 ]
-            }),
-            config: {
-                temperature: 0.35,
-                systemInstruction: "Sei lo chef digitale di EatUp. Suggerisci solo ricette vere, realistiche e cucinabili in italiano. Privilegia piatti riconoscibili, ingredienti compatibili e preparazioni sensate. Non inventare ricette finte.",
-                responseMimeType: "application/json",
-                responseJsonSchema: {
-                    type: "object",
-                    additionalProperties: false,
-                    required: ["soloSelezionati", "pochiExtra", "daComprare"],
-                    properties: {
-                        soloSelezionati: {
-                            type: "array",
-                            minItems: 0,
-                            maxItems: 4,
-                            items: recipeSchema()
-                        },
-                        pochiExtra: {
-                            type: "array",
-                            minItems: 0,
-                            maxItems: 4,
-                            items: recipeSchema()
-                        },
-                        daComprare: {
-                            type: "array",
-                            minItems: 0,
-                            maxItems: 4,
-                            items: recipeSchema()
-                        }
+            },
+            "generated_recipes",
+            {
+                type: "object",
+                additionalProperties: false,
+                required: ["soloSelezionati", "pochiExtra", "daComprare"],
+                properties: {
+                    soloSelezionati: {
+                        type: "array",
+                        minItems: 0,
+                        maxItems: 4,
+                        items: recipeSchema()
+                    },
+                    pochiExtra: {
+                        type: "array",
+                        minItems: 0,
+                        maxItems: 4,
+                        items: recipeSchema()
+                    },
+                    daComprare: {
+                        type: "array",
+                        minItems: 0,
+                        maxItems: 4,
+                        items: recipeSchema()
                     }
                 }
-            }
-        });
+            },
+            0.35
+        );
 
-        const recipes = await prepareRecipesForClient(parseVertexJson(response.text));
-        await saveGeneratedRecipes(req.username, recipes, ingredients);
-        return res.send(recipes);
+        const preparedRecipes = await prepareRecipesForClient(recipes);
+        await saveGeneratedRecipes(req.username, preparedRecipes, ingredients);
+        return res.send(preparedRecipes);
     } catch (err: any) {
-        console.log("Errore generazione ricette", err);
         return res.status(500).send("Errore durante la generazione delle ricette");
     }
 });
 
-function createVertexAIClient() {
-    const project = process.env.GOOGLE_CLOUD_PROJECT;
-    if (!project) {
-        throw new Error("GOOGLE_CLOUD_PROJECT non configurato");
+async function generateJson(
+    system: string,
+    payload: unknown,
+    schemaName: string,
+    schema: Record<string, any>,
+    temperature: number
+) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+        throw new Error("GROQ_API_KEY non configurato");
+    }
+    if (!GROQ_MODEL) {
+        throw new Error("GROQ_MODEL non configurato");
+    }
+    if (!groqClient) {
+        groqClient = new Groq({ apiKey });
     }
 
-    return new GoogleGenAI({
-        vertexai: true,
-        project,
-        location: process.env.GOOGLE_CLOUD_LOCATION || "global"
+    const response = await groqClient.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [
+            {
+                role: "system",
+                content: `${system} Rispondi esclusivamente in lingua italiana e rispetta lo schema JSON.`
+            },
+            {
+                role: "user",
+                content: JSON.stringify(payload)
+            }
+        ],
+        temperature,
+        response_format: {
+            type: "json_schema",
+            json_schema: {
+                name: schemaName,
+                strict: true,
+                schema
+            }
+        }
     });
-}
 
-function parseVertexJson(text: string | undefined) {
-    if (!text) {
-        throw new Error("Vertex AI non ha restituito testo");
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+        throw new Error("Groq non ha restituito contenuto JSON");
     }
-    return JSON.parse(text);
+    return JSON.parse(content);
 }
 
 function buildDatedWeekProgram(generatedProgram: any, preferences: any) {
@@ -631,189 +648,147 @@ function buildDatedWeekProgram(generatedProgram: any, preferences: any) {
 }
 
 async function saveWeekProgram(username: string, weekProgram: any) {
-    const client = new MongoClient(connectionString!);
+    const db = (await getMongoClient()).db(dbName);
+    const savedWeekProgram = {
+        ...weekProgram,
+        username,
+        updatedAt: new Date()
+    };
 
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        const savedWeekProgram = {
-            ...weekProgram,
-            username,
-            updatedAt: new Date()
-        };
-
-        await db.collection("weekPrograms").updateOne(
-            { username },
-            {
-                $set: savedWeekProgram,
-                $setOnInsert: {
-                    createdAt: new Date()
-                }
-            },
-            { upsert: true }
-        );
-
-        await db.collection("users").updateOne(
-            { username },
-            {
-                $set: {
-                    "savedData.weekProgram": savedWeekProgram,
-                    "savedData.updatedAt": new Date()
-                }
+    await db.collection("weekPrograms").updateOne(
+        { username },
+        {
+            $set: savedWeekProgram,
+            $setOnInsert: {
+                createdAt: new Date()
             }
-        );
-    } finally {
-        await client.close();
-    }
+        },
+        { upsert: true }
+    );
+
+    await db.collection("users").updateOne(
+        { username },
+        {
+            $set: {
+                "savedData.weekProgram": savedWeekProgram,
+                "savedData.updatedAt": new Date()
+            }
+        }
+    );
 }
 
 async function getLatestWeekProgram(username: string) {
-    const client = new MongoClient(connectionString!);
+    const db = (await getMongoClient()).db(dbName);
+    const user = await db.collection("users").findOne(
+        { username },
+        { projection: { _id: 0, "savedData.weekProgram": 1 } }
+    );
 
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        const user = await db.collection("users").findOne(
-            { username },
-            { projection: { _id: 0, "savedData.weekProgram": 1 } }
-        );
-
-        if (user?.savedData?.weekProgram) {
-            return user.savedData.weekProgram;
-        }
-
-        return await db.collection("weekPrograms").findOne(
-            { username },
-            { sort: { updatedAt: -1 }, projection: { _id: 0 } }
-        );
-    } finally {
-        await client.close();
+    if (user?.savedData?.weekProgram) {
+        return user.savedData.weekProgram;
     }
+
+    return await db.collection("weekPrograms").findOne(
+        { username },
+        { sort: { updatedAt: -1 }, projection: { _id: 0 } }
+    );
 }
 
 async function saveGeneratedRecipes(username: string, recipes: any, sourceIngredients: string[]) {
-    const client = new MongoClient(connectionString!);
+    const db = (await getMongoClient()).db(dbName);
+    const savedRecipes = {
+        username,
+        groups: recipes,
+        sourceIngredients,
+        updatedAt: new Date()
+    };
 
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        const savedRecipes = {
-            username,
-            groups: recipes,
-            sourceIngredients,
-            updatedAt: new Date()
-        };
-
-        await db.collection("generatedRecipes").updateOne(
-            { username },
-            {
-                $set: savedRecipes,
-                $setOnInsert: {
-                    createdAt: new Date()
-                }
-            },
-            { upsert: true }
-        );
-
-        await db.collection("users").updateOne(
-            { username },
-            {
-                $set: {
-                    "savedData.generatedRecipes": savedRecipes,
-                    "savedData.updatedAt": new Date()
-                }
+    await db.collection("generatedRecipes").updateOne(
+        { username },
+        {
+            $set: savedRecipes,
+            $setOnInsert: {
+                createdAt: new Date()
             }
-        );
-    } finally {
-        await client.close();
-    }
+        },
+        { upsert: true }
+    );
+
+    await db.collection("users").updateOne(
+        { username },
+        {
+            $set: {
+                "savedData.generatedRecipes": savedRecipes,
+                "savedData.updatedAt": new Date()
+            }
+        }
+    );
 }
 
 async function getLatestGeneratedRecipes(username: string) {
-    const client = new MongoClient(connectionString!);
+    const db = (await getMongoClient()).db(dbName);
+    const user = await db.collection("users").findOne(
+        { username },
+        { projection: { _id: 0, "savedData.generatedRecipes": 1 } }
+    );
 
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        const user = await db.collection("users").findOne(
-            { username },
-            { projection: { _id: 0, "savedData.generatedRecipes": 1 } }
-        );
-
-        if (user?.savedData?.generatedRecipes) {
-            return user.savedData.generatedRecipes;
-        }
-
-        return await db.collection("generatedRecipes").findOne(
-            { username },
-            { sort: { updatedAt: -1 }, projection: { _id: 0 } }
-        );
-    } finally {
-        await client.close();
+    if (user?.savedData?.generatedRecipes) {
+        return user.savedData.generatedRecipes;
     }
+
+    return await db.collection("generatedRecipes").findOne(
+        { username },
+        { sort: { updatedAt: -1 }, projection: { _id: 0 } }
+    );
 }
 
 async function saveShoppingList(username: string, shoppingList: any, context: any) {
-    const client = new MongoClient(connectionString!);
+    const db = (await getMongoClient()).db(dbName);
+    const savedShoppingList = {
+        username,
+        ...shoppingList,
+        availableIngredients: normalizeStringArray(context?.availableIngredients),
+        generationSignature: String(context?.generationSignature ?? ""),
+        updatedAt: new Date()
+    };
 
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        const savedShoppingList = {
-            username,
-            ...shoppingList,
-            availableIngredients: normalizeStringArray(context?.availableIngredients),
-            generationSignature: String(context?.generationSignature ?? ""),
-            updatedAt: new Date()
-        };
-
-        await db.collection("shoppingLists").updateOne(
-            { username },
-            {
-                $set: savedShoppingList,
-                $setOnInsert: {
-                    createdAt: new Date()
-                }
-            },
-            { upsert: true }
-        );
-
-        await db.collection("users").updateOne(
-            { username },
-            {
-                $set: {
-                    "savedData.shoppingList": savedShoppingList,
-                    "savedData.updatedAt": new Date()
-                }
+    await db.collection("shoppingLists").updateOne(
+        { username },
+        {
+            $set: savedShoppingList,
+            $setOnInsert: {
+                createdAt: new Date()
             }
-        );
-    } finally {
-        await client.close();
-    }
+        },
+        { upsert: true }
+    );
+
+    await db.collection("users").updateOne(
+        { username },
+        {
+            $set: {
+                "savedData.shoppingList": savedShoppingList,
+                "savedData.updatedAt": new Date()
+            }
+        }
+    );
 }
 
 async function getLatestShoppingList(username: string) {
-    const client = new MongoClient(connectionString!);
+    const db = (await getMongoClient()).db(dbName);
+    const user = await db.collection("users").findOne(
+        { username },
+        { projection: { _id: 0, "savedData.shoppingList": 1 } }
+    );
 
-    try {
-        await client.connect();
-        const db = client.db(dbName);
-        const user = await db.collection("users").findOne(
-            { username },
-            { projection: { _id: 0, "savedData.shoppingList": 1 } }
-        );
-
-        if (user?.savedData?.shoppingList) {
-            return user.savedData.shoppingList;
-        }
-
-        return await db.collection("shoppingLists").findOne(
-            { username },
-            { sort: { updatedAt: -1 }, projection: { _id: 0 } }
-        );
-    } finally {
-        await client.close();
+    if (user?.savedData?.shoppingList) {
+        return user.savedData.shoppingList;
     }
+
+    return await db.collection("shoppingLists").findOne(
+        { username },
+        { sort: { updatedAt: -1 }, projection: { _id: 0 } }
+    );
 }
 
 function todayIsoDate() {
@@ -1059,57 +1034,19 @@ async function findRecipeImage(recipe: any) {
         return recipeImageCache.get(cacheKey)!;
     }
 
-    const imageUrl = await generateRecipeImage(recipe) ?? FOOD_NOT_FOUND_IMAGE;
-
-    recipeImageCache.set(cacheKey, imageUrl);
-    return imageUrl;
-}
-
-async function generateRecipeImage(recipe: any) {
-    const title = String(recipe?.titolo ?? recipe?.imageSearchQuery ?? "").trim();
-    const ingredients = uniqueStrings([
-        ...normalizeStringArray(recipe?.ingredienti),
-        ...normalizeStringArray(recipe?.ingredientiExtra)
-    ]).slice(0, 10);
-    const prompt = [
-        `Foto realistica professionale di ${title}.`,
-        ingredients.length > 0 ? `Ingredienti visibili o coerenti: ${ingredients.join(", ")}.` : "",
-        "Impiattamento naturale, luce da cucina o ristorante, sfondo semplice, nessun testo, nessun logo, nessuna persona."
-    ].filter(Boolean).join(" ");
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-
-    try {
-        const response: any = await createVertexAIClient().models.generateImages({
-            model: RECIPE_IMAGE_MODEL,
-            prompt,
-            config: {
-                numberOfImages: 1,
-                aspectRatio: "16:9",
-                outputMimeType: "image/jpeg",
-                outputCompressionQuality: 85,
-                includeRaiReason: true,
-                enhancePrompt: true,
-                abortSignal: controller.signal
-            }
-        });
-
-        const image = response?.generatedImages?.[0]?.image;
-        const imageBytes = image?.imageBytes;
-        const mimeType = image?.mimeType || "image/jpeg";
-
-        if (typeof imageBytes === "string" && imageBytes.length > 0) {
-            return `data:${mimeType};base64,${imageBytes}`;
+    let imageUrl: string | null = null;
+    for (const query of queries) {
+        imageUrl = await findTheMealDbImage(query)
+            ?? await findWikipediaImage(query)
+            ?? await findWikimediaCommonsImage(query);
+        if (imageUrl) {
+            break;
         }
-
-        console.log("Immagine ricetta filtrata o vuota", response?.generatedImages?.[0]?.raiFilteredReason ?? "");
-        return null;
-    } catch (err: any) {
-        console.log("Generazione immagine ricetta non riuscita", err?.message ?? err);
-        return null;
-    } finally {
-        clearTimeout(timeout);
     }
+
+    const result = imageUrl ?? FOOD_NOT_FOUND_IMAGE;
+    recipeImageCache.set(cacheKey, result);
+    return result;
 }
 
 function buildRecipeImageQueries(recipe: any) {
@@ -1245,7 +1182,6 @@ async function fetchJson(url: string) {
 
         return await response.json();
     } catch (err: any) {
-        console.log("Ricerca immagine non riuscita", err?.message ?? err);
         return null;
     } finally {
         clearTimeout(timeout);
@@ -1320,33 +1256,8 @@ function createToken(data: any) {
         iat: data.iat || now,
         exp: now + parseInt(process.env.DURATA_TOKEN!)
     }
-    const token = jwt.sign(payload, jwtKey)
-    console.log("Creato nuovo token", token)
-    return token
+    return jwt.sign(payload, jwtKey, { algorithm: "HS256" });
 }
-
-//e. gestione delle root dinamiche
-app.get('/api/getCollections', async function (req, res, next) {
-    const client = new MongoClient(connectionString!);
-    await client.connect().catch(err => {
-        res.status(503).send("Errore di connessione al database");
-        return;
-    });
-    const db = client.db(dbName);
-    // restituisce l'elenco delle collezioni presenti nel db
-    const cmd = db.listCollections().toArray();
-    cmd.then(function (data) {
-        res.send(data);
-    });
-    cmd.catch(function (err) {
-        res.status(500).send("Errore lettura collezioni" + err);
-    });
-    cmd.finally(function () {
-        client.close();
-    });
-});
-
-
 
 //f. default root
 app.use(function (req, res, next) {
@@ -1366,5 +1277,4 @@ app.use(function (req, res, next) {
 app.use('/', function (err: Error, req: express.Request, res: express.Response, next: express.NextFunction) {
     // err.stack contiene l'elenco completo degli errori
     res.status(500).send(err.message);
-    console.log('****** ERRORE ******\n' + err.stack);
 });

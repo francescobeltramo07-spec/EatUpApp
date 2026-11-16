@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 
 export class ApiConfigurationError extends Error {
   constructor() {
-    super("EatUp API origin is not configured for HTTPS on port 3000.");
+    super("EatUp API origin must use HTTPS on port 3000 or 443.");
     this.name = "ApiConfigurationError";
   }
 }
@@ -28,7 +28,7 @@ export function resolveApiOrigin(configuredOrigin: unknown): string {
 
   if (
     url.protocol !== "https:" ||
-    url.port !== "3000" ||
+    (url.port !== "" && url.port !== "3000") ||
     url.username !== "" ||
     url.password !== "" ||
     url.pathname !== "/" ||

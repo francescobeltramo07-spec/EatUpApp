@@ -1,7 +1,7 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import HomeScreen from "../app";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { eatUpApi } from "../services/eatup-api";
 import React from "react";
 
@@ -27,12 +27,24 @@ describe("home screen", () => {
     mockedParams.mockReturnValue({});
   });
 
-  it("renders the welcome content and updates the ingredient count", async () => {
-    const { getByText } = await render(<HomeScreen />);
+  it("renders the EatUp home content and feature cards", async () => {
+    const { getByRole, getByText } = await render(<HomeScreen />);
 
-    expect(getByText("Ciao EatUp!")).toBeTruthy();
-    await fireEvent.press(getByText("Aggiungi ingrediente"));
-    expect(getByText("Ingredienti scelti: 1")).toBeTruthy();
+    expect(getByText("Cucina intelligente")).toBeTruthy();
+    expect(getByText("EatUp")).toBeTruthy();
+    expect(
+      getByText(
+        "Organizza ingredienti, ricette e programma settimanale in un unico posto.",
+      ),
+    ).toBeTruthy();
+    expect(getByText("Ingredienti smart")).toBeTruthy();
+    expect(getByText("Ricette con AI")).toBeTruthy();
+    expect(getByText("Programma settimanale")).toBeTruthy();
+    await fireEvent.press(getByText("Trova ricette"));
+    await fireEvent.press(getByText("Programma settimana"));
+    expect(router.push).toHaveBeenNthCalledWith(1, "/login");
+    expect(router.push).toHaveBeenNthCalledWith(2, "/register");
+    expect(getByRole("button", { name: "Accedi" })).toBeTruthy();
     expect(mockedEatUpApi.getWeekProgram).not.toHaveBeenCalled();
   });
 
@@ -52,12 +64,14 @@ describe("home screen", () => {
       ],
     });
 
-    const { findByText, getByText } = await render(<HomeScreen />);
+    const { findByText, getAllByText, getByText } = await render(<HomeScreen />);
 
-    expect(await findByText("Colazione: Yogurt e frutta")).toBeTruthy();
-    expect(getByText("Pranzo: Pasta")).toBeTruthy();
-    expect(getByText("Merenda: Non indicato")).toBeTruthy();
-    expect(getByText("Cena: Non indicato")).toBeTruthy();
+    expect(await findByText("Yogurt e frutta")).toBeTruthy();
+    expect(getByText("Colazione")).toBeTruthy();
+    expect(getByText("Pasta")).toBeTruthy();
+    expect(getByText("Merenda")).toBeTruthy();
+    expect(getByText("Cena")).toBeTruthy();
+    expect(getAllByText("Non indicato")).toHaveLength(2);
     expect(mockedEatUpApi.getWeekProgram).toHaveBeenCalledTimes(1);
   });
 

@@ -1,0 +1,21 @@
+unit: ingredient_recipes
+bindings:
+  - type: route-declaration
+    name: "/ingredients-recipes"
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/app.routes.ts:32"
+    target: "src/app/ingredients-recipes.tsx"
+    must_appear_in_target: true
+    notes: "Expo Router derives the route from the filename."
+  - type: route-declaration
+    name: "Ingredient catalog and generated recipe API calls"
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/services/common-service.ts:35"
+    target: "src/services/eatup-api.ts"
+    must_appear_in_target: true
+    notes: "Catalog read is public; recipe read and generation use credentials."
+runtime_config:
+  - key: EATUP_API_ORIGIN
+    source_loc: "app.config.ts:7"
+    source: env
+    default_value: ""
+    must_appear_in_target: true
+    notes: "Existing Expo API origin configuration."

@@ -154,4 +154,69 @@ describe("EatUp authentication transport", () => {
       status: 401,
     });
   });
+
+  it("uses the existing REST contracts for meal, recipe, ingredient, and shopping data", async () => {
+    const fetcher = (jest
+      .fn() as jest.MockedFunction<typeof fetch>)
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn<() => Promise<unknown>>().mockResolvedValue({}),
+      } as unknown as Response) as unknown as typeof fetch;
+    const api = createEatUpAuthApi("https://eatup.example.test", fetcher);
+    const preferences = {
+      calorie: 2100,
+      proteine: 100,
+      preferenze: "vegetariano",
+      intolleranze: "lattosio",
+    };
+
+    await api.getIngredients();
+    await api.generateWeekProgram(preferences);
+    await api.getGeneratedRecipes();
+    await api.generateRecipesFromIngredients(["pomodoro"]);
+    await api.getShoppingList();
+    await api.generateShoppingList(["uova"]);
+
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "https://eatup.example.test/api/getIngredients",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "https://eatup.example.test/api/generateWeekProgram",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: JSON.stringify(preferences),
+      }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "https://eatup.example.test/api/generatedRecipes",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      4,
+      "https://eatup.example.test/api/generateRecipesFromIngredients",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ingredients: ["pomodoro"] }),
+      }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      5,
+      "https://eatup.example.test/api/shoppingList",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+    expect(fetcher).toHaveBeenNthCalledWith(
+      6,
+      "https://eatup.example.test/api/generateShoppingList",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ availableIngredients: ["uova"] }),
+      }),
+    );
+  });
 });

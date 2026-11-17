@@ -1,0 +1,54 @@
+units:
+  - name: week_program
+    trigger: page
+    trigger_detail: "Expo route /week-program; source Angular route /week-program"
+    source_anchors:
+      - path: ../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts
+        line: 23
+      - path: ../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.html
+    exported_signature: []
+    dynamic_entrypoints: []
+    depends_on:
+      - unit: ingredient_recipes
+        via: "shared authenticated API service pattern"
+    shared_refs:
+      - module: common_service
+        used_fields: [currentUserEmail, generateWeekProgram, getWeekProgram]
+      - module: data_storage_service
+        used_fields: [inviaRichiesta]
+  - name: ingredient_recipes
+    trigger: page
+    trigger_detail: "Expo route /ingredients-recipes; source Angular route /ingredients-recipes"
+    source_anchors:
+      - path: ../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts
+        line: 28
+      - path: ../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.html
+    exported_signature: []
+    dynamic_entrypoints: []
+    depends_on:
+      - unit: shopping_list
+        via: "both use the ingredient catalog and selected pantry ingredients"
+    shared_refs:
+      - module: common_service
+        used_fields: [currentUserEmail, getIngredients, generateRecipesFromIngredients, getGeneratedRecipes]
+      - module: data_storage_service
+        used_fields: [inviaRichiesta]
+  - name: shopping_list
+    trigger: page
+    trigger_detail: "Expo route /lista-spesa; source Angular route /lista-spesa"
+    source_anchors:
+      - path: ../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts
+        line: 25
+      - path: ../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.html
+    exported_signature: []
+    dynamic_entrypoints: []
+    depends_on:
+      - unit: week_program
+        via: "shopping-list generation reads the saved weekly program on the backend"
+      - unit: ingredient_recipes
+        via: "shopping-list generation reads saved recipes and accepts available ingredients"
+    shared_refs:
+      - module: common_service
+        used_fields: [currentUserEmail, getIngredients, generateShoppingList, getShoppingList]
+      - module: data_storage_service
+        used_fields: [inviaRichiesta]

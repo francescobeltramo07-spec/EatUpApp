@@ -1,0 +1,93 @@
+metadata:
+  generated: "2026-11-16"
+  source_plan: ".github/modernize/eatup-native-pages/plan.md"
+  target_tasks: ".github/modernize/eatup-native-pages/plan.md#Task-Breakdown"
+summary:
+  total_plan_items: 5
+  covered_plan_items: 5
+  missing_plan_items: 0
+  coverage_percentage: 100.0
+  total_tasks_generated: 12
+  orphan_tasks: 0
+phases:
+  - phase_id: "Phase-1"
+    phase_name: "Shared API and ingredient selection"
+    items:
+      - item_id: "1.1"
+        description: "Typed API methods and reusable ingredient picker."
+        tasks:
+          - task_id: "T001"
+            description: "Test new API methods."
+          - task_id: "T002"
+            description: "Implement typed API methods."
+          - task_id: "T003"
+            description: "Test picker behavior."
+          - task_id: "T004"
+            description: "Implement ingredient picker."
+  - phase_id: "Phase-2"
+    phase_name: "Recipe discovery"
+    items:
+      - item_id: "2.1"
+        description: "Implement recipe page."
+        tasks:
+          - task_id: "T005"
+            description: "Test recipe screen."
+          - task_id: "T006"
+            description: "Implement recipe screen."
+  - phase_id: "Phase-3"
+    phase_name: "Weekly program"
+    items:
+      - item_id: "3.1"
+        description: "Implement weekly program page."
+        tasks:
+          - task_id: "T007"
+            description: "Test weekly-program screen."
+          - task_id: "T008"
+            description: "Implement weekly-program screen."
+  - phase_id: "Phase-4"
+    phase_name: "Shopping list"
+    items:
+      - item_id: "4.1"
+        description: "Implement shopping list page."
+        tasks:
+          - task_id: "T009"
+            description: "Test shopping-list screen."
+          - task_id: "T010"
+            description: "Implement shopping-list screen."
+  - phase_id: "Phase-5"
+    phase_name: "Navigation and verification"
+    items:
+      - item_id: "5.1"
+        description: "Connect Home to the new pages."
+        tasks:
+          - task_id: "T011"
+            description: "Test Home navigation."
+          - task_id: "T012"
+            description: "Implement Home navigation."
+missing_plan_items: []
+orphan_tasks: []
+upstream_trace:
+  - plan_item: "1.1"
+    source_requirements: ["REQ-002", "REQ-009"]
+    tasks: ["T001", "T002", "T003", "T004"]
+    full_trace: "REQ-002,REQ-009 -> 1.1 -> T001,T002,T003,T004"
+  - plan_item: "2.1"
+    source_requirements: ["REQ-002", "REQ-003", "REQ-004"]
+    tasks: ["T005", "T006"]
+    full_trace: "REQ-002,REQ-003,REQ-004 -> 2.1 -> T005,T006"
+  - plan_item: "3.1"
+    source_requirements: ["REQ-005", "REQ-006"]
+    tasks: ["T007", "T008"]
+    full_trace: "REQ-005,REQ-006 -> 3.1 -> T007,T008"
+  - plan_item: "4.1"
+    source_requirements: ["REQ-007", "REQ-008"]
+    tasks: ["T009", "T010"]
+    full_trace: "REQ-007,REQ-008 -> 4.1 -> T009,T010"
+  - plan_item: "5.1"
+    source_requirements: ["REQ-001", "REQ-009"]
+    tasks: ["T011", "T012"]
+    full_trace: "REQ-001,REQ-009 -> 5.1 -> T011,T012"
+validation:
+  passed: true
+  errors: []
+  warnings: []

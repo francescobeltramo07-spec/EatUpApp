@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import { AuthShell, authStyles } from "../components/auth-shell";
+import { useAuth } from "../contexts/auth-context";
 import {
   ApiConfigurationError,
   ApiRequestError,
@@ -17,6 +18,7 @@ import React from "react";
 
 export default function LoginScreen() {
   const params = useLocalSearchParams();
+  const { setSignedIn } = useAuth();
   const passwordInputRef = useRef<TextInputInstance>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -36,7 +38,8 @@ export default function LoginScreen() {
     setSubmitting(true);
     try {
       await eatUpAuthApi.login(normalizedUsername, password);
-      router.replace("/?signedIn=true" as Href);
+      setSignedIn(true);
+      router.replace("/" as Href);
     } catch (requestError) {
       setError(
         requestError instanceof ApiConfigurationError

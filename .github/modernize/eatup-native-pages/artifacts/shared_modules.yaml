@@ -1,0 +1,39 @@
+modules:
+  - name: common_service
+    kind: utility
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/services/common-service.ts:9"
+    used_by_units: [week_program, ingredient_recipes, shopping_list]
+    fields:
+      - name: currentUserEmail
+        type: "string | null"
+      - name: getIngredients
+        type: "Observable<any>"
+      - name: generateWeekProgram
+        type: "Observable<any>"
+      - name: getWeekProgram
+        type: "Observable<any>"
+      - name: generateRecipesFromIngredients
+        type: "Observable<any>"
+      - name: getGeneratedRecipes
+        type: "Observable<any>"
+      - name: generateShoppingList
+        type: "Observable<any>"
+      - name: getShoppingList
+        type: "Observable<any>"
+    god_class: false
+    split_candidate: false
+    migration_strategy: wrap
+    notes: "The React Native API module replaces the HTTP-facing methods while preserving server paths and payloads."
+  - name: data_storage_service
+    kind: utility
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/services/data-storage-services.ts:6"
+    used_by_units: [week_program, ingredient_recipes, shopping_list]
+    fields:
+      - name: inviaRichiesta
+        type: "HttpClient method dispatcher"
+      - name: REST_API_SERVER
+        type: "string"
+    god_class: false
+    split_candidate: false
+    migration_strategy: wrap
+    notes: "Requests use the existing configured Expo API origin and include credentials."

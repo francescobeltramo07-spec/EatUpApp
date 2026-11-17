@@ -1,9 +1,10 @@
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { router, useLocalSearchParams } from "expo-router";
-import HomeScreen from "../app";
+import { router, useLocalSearchParams, type Href } from "expo-router";
+import HomeScreen from "../app/(tabs)/index";
 import LoginScreen from "../app/login";
 import RegisterScreen from "../app/register";
+import { useAuth } from "../contexts/auth-context";
 import {
   ApiConfigurationError,
   ApiRequestError,
@@ -18,6 +19,10 @@ jest.mock("expo-router", () => ({
     replace: jest.fn(),
   },
   useLocalSearchParams: jest.fn(() => ({})),
+}));
+
+jest.mock("../contexts/auth-context", () => ({
+  useAuth: jest.fn(),
 }));
 
 jest.mock("../services/eatup-api", () => {
@@ -40,11 +45,17 @@ const mockedAuthApi = jest.mocked(eatUpAuthApi);
 const mockedEatUpApi = jest.mocked(eatUpApi);
 const mockedRouter = jest.mocked(router);
 const mockedUseLocalSearchParams = jest.mocked(useLocalSearchParams);
+const mockedUseAuth = jest.mocked(useAuth);
+const mockedSetSignedIn = jest.fn();
 
 describe("registration and login flow", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedUseLocalSearchParams.mockReturnValue({});
+    mockedUseAuth.mockReturnValue({
+      signedIn: false,
+      setSignedIn: mockedSetSignedIn,
+    });
   });
 
   it("sends a registration request and routes to login without treating registration as sign-in", async () => {
@@ -87,7 +98,8 @@ describe("registration and login flow", () => {
     await waitFor(() => {
       expect(mockedAuthApi.login).toHaveBeenCalledWith("utente", "password");
     });
-    expect(mockedRouter.replace).toHaveBeenCalledWith("/?signedIn=true");
+    expect(mockedRouter.replace).toHaveBeenCalledWith("/" as Href);
+    expect(mockedSetSignedIn).toHaveBeenCalledWith(true);
   });
 
   it("loads the protected Home preview after successful login", async () => {
@@ -100,10 +112,13 @@ describe("registration and login flow", () => {
     await fireEvent.press(getByLabelText("Invia accesso"));
 
     await waitFor(() => {
-      expect(mockedRouter.replace).toHaveBeenCalledWith("/?signedIn=true");
+      expect(mockedRouter.replace).toHaveBeenCalledWith("/" as Href);
     });
 
-    mockedUseLocalSearchParams.mockReturnValue({ signedIn: "true" });
+    mockedUseAuth.mockReturnValue({
+      signedIn: true,
+      setSignedIn: mockedSetSignedIn,
+    });
     const { findByText } = await render(<HomeScreen />);
 
     expect(await findByText("Nessun pasto programmato per oggi.")).toBeTruthy();

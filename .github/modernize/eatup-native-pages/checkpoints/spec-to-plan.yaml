@@ -1,0 +1,88 @@
+metadata:
+  generated: "2026-11-16"
+  source_spec: ".github/modernize/eatup-native-pages/spec.md"
+  target_plan: ".github/modernize/eatup-native-pages/plan.md"
+summary:
+  total_requirements: 9
+  covered_requirements: 9
+  missing_requirements: 0
+  coverage_percentage: 100.0
+requirements:
+  - req_id: "REQ-001"
+    req_description: "Provide navigable routes and Home actions."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-5"
+      phase_name: "Navigation and verification"
+      items: [{ item_id: "5.1", description: "Link Home to new routes." }]
+    notes: ""
+  - req_id: "REQ-002"
+    req_description: "Search, expand, and select ingredients."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-1"
+      phase_name: "Shared API and ingredient selection"
+      items: [{ item_id: "1.1", description: "Add typed API and ingredient picker." }]
+    notes: ""
+  - req_id: "REQ-003"
+    req_description: "Generate and display grouped recipes."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-2"
+      phase_name: "Recipe discovery"
+      items: [{ item_id: "2.1", description: "Implement recipe route." }]
+    notes: ""
+  - req_id: "REQ-004"
+    req_description: "Load saved recipes and explain signed-out/empty selection states."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-2"
+      phase_name: "Recipe discovery"
+      items: [{ item_id: "2.1", description: "Implement recipe route." }]
+    notes: ""
+  - req_id: "REQ-005"
+    req_description: "Load and submit weekly program preferences."
+    priority: "P2"
+    plan_mapping:
+      phase: "Phase-3"
+      phase_name: "Weekly program"
+      items: [{ item_id: "3.1", description: "Implement weekly-program route." }]
+    notes: ""
+  - req_id: "REQ-006"
+    req_description: "Validate and display weekly results with states."
+    priority: "P2"
+    plan_mapping:
+      phase: "Phase-3"
+      phase_name: "Weekly program"
+      items: [{ item_id: "3.1", description: "Implement weekly-program route." }]
+    notes: ""
+  - req_id: "REQ-007"
+    req_description: "Load and generate the shopping list."
+    priority: "P3"
+    plan_mapping:
+      phase: "Phase-4"
+      phase_name: "Shopping list"
+      items: [{ item_id: "4.1", description: "Implement shopping-list route." }]
+    notes: ""
+  - req_id: "REQ-008"
+    req_description: "Check items and preserve accurate counts and guards."
+    priority: "P3"
+    plan_mapping:
+      phase: "Phase-4"
+      phase_name: "Shopping list"
+      items: [{ item_id: "4.1", description: "Implement shopping-list route." }]
+    notes: ""
+  - req_id: "REQ-009"
+    req_description: "Preserve API and authentication contracts."
+    priority: "P1"
+    plan_mapping:
+      phase: "Phase-1"
+      phase_name: "Shared API and ingredient selection"
+      items: [{ item_id: "1.1", description: "Preserve request transport and contracts." }]
+    notes: ""
+missing_requirements: []
+orphan_plan_items: []
+validation:
+  passed: true
+  errors: []
+  warnings: []

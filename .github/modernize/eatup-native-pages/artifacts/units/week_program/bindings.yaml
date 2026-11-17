@@ -1,0 +1,21 @@
+unit: week_program
+bindings:
+  - type: route-declaration
+    name: "/week-program"
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/app.routes.ts:28"
+    target: "src/app/week-program.tsx"
+    must_appear_in_target: true
+    notes: "Expo Router derives the route from the filename."
+  - type: route-declaration
+    name: "POST /api/generateWeekProgram and GET /api/weekProgram"
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/services/common-service.ts:43"
+    target: "src/services/eatup-api.ts"
+    must_appear_in_target: true
+    notes: "Use the existing API origin and include credentials."
+runtime_config:
+  - key: EATUP_API_ORIGIN
+    source_loc: "app.config.ts:7"
+    source: env
+    default_value: ""
+    must_appear_in_target: true
+    notes: "Existing Expo API origin configuration."

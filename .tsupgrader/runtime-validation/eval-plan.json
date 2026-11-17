@@ -1,0 +1,54 @@
+{
+  "generatedOnPlatform": "win32",
+  "projectType": "webapp",
+  "devServer": {
+    "command": "npm",
+    "args": ["run", "web", "--", "--port", "8082"],
+    "url": "http://localhost:8082/",
+    "readyTimeoutSeconds": 120
+  },
+  "setup": [
+    {
+      "command": "npm",
+      "args": ["ci"],
+      "timeoutSeconds": 600
+    }
+  ],
+  "assertions": [
+    {
+      "name": "tsc-no-emit",
+      "kind": "process",
+      "command": "npx",
+      "args": ["tsc", "--noEmit"],
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "tests-pass",
+      "kind": "process",
+      "command": "npm",
+      "args": ["test", "--", "--runInBand", "src"],
+      "verificationMethod": "test-results",
+      "expected": "0",
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "expo-lint",
+      "kind": "process",
+      "command": "npx",
+      "args": ["expo", "lint"],
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "eatup-home-web-smoke",
+      "kind": "playwright-route",
+      "scriptPath": ".tsupgrader/runtime-validation/playwright-scripts/eatup-home-web-smoke.spec.ts",
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 180
+    }
+  ]
+}

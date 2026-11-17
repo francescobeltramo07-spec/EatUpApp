@@ -1,0 +1,39 @@
+unit: week_program
+side_effects:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:68"
+    effect: "Loads the saved program and repopulates saved nutrition preferences when signed in."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:108"
+    effect: "Submits nutrition preferences to generate and persist a new weekly program."
+    must_preserve: true
+branches:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:61"
+    condition: "User is not signed in."
+    behavior: "Do not load the protected saved program; show a login-required state."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:87"
+    condition: "Calories are missing or non-positive."
+    behavior: "Do not submit; show validation feedback."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:115"
+    condition: "Generated response has no valid days."
+    behavior: "Show a response validation error."
+    must_preserve: true
+error_paths:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:76"
+    trigger: "Saved program request fails."
+    outcome: "Stop loading and retain an empty program."
+    contract: "Protected GET /api/weekProgram status is surfaced to the client."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:120"
+    trigger: "Generation request fails."
+    outcome: "Show an Italian retry message and stop loading."
+    contract: "Non-2xx response must not be treated as success."
+    must_preserve: true
+concurrency:
+  model: async
+  tx_boundary:
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/week-program/week-program.ts:108"
+    scope: "One generation request; backend persists the completed program."
+    isolation: "No client-side transaction."
+    must_preserve: true

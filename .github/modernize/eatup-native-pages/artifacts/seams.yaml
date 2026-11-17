@@ -1,0 +1,21 @@
+seams:
+  - id: "Server/server.ts:274"
+    description: "React Native pages call the existing Express API; backend implementation and route contracts remain unchanged."
+    source: inferred
+    cut_between:
+      migrated_side: week_program
+      frozen_side: existing_backend
+    protocol_shift: null
+    frozen_side_rule: "Do not modify Server/server.ts or its database/provider configuration in this page migration."
+    bridge_points:
+      - at: "src/services/eatup-api.ts"
+        from_form: "Angular HttpClient methods with withCredentials"
+        to_form: "React Native fetch calls with credentials: include"
+        mapping_rule: "Keep every HTTP path, method, JSON field name, and response contract from wire_contracts.yaml."
+        edge_cases:
+          - "Resolve relative recipe images against the configured HTTPS API origin."
+          - "Surface non-2xx status to the screen without exposing response bodies."
+          - "Do not automatically retry AI generation POST requests."
+        idempotency_retry: "GET requests may be repeated by user action; AI POST requests are not retried automatically."
+        fallback: "Show a screen-level error and allow the user to retry manually."
+        must_preserve: true

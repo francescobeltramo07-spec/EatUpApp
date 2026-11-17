@@ -1,0 +1,40 @@
+user_intent:
+  raw_request: "Add the remaining services and pages from the Angular EatUp client to the React Native app."
+  inferred_acceptance:
+    - "The weekly program, ingredient-based recipes, and shopping-list journeys work in React Native."
+    - "Existing login and registration behavior is unchanged."
+    - "Existing backend API contracts remain unchanged."
+  cleanup_required: false
+strategy: minimal_runtime
+runtime_reachable:
+  - src/app/index.tsx
+  - src/app/week-program.tsx
+  - src/app/ingredients-recipes.tsx
+  - src/app/lista-spesa.tsx
+  - src/services/eatup-api.ts
+  - src/components/ingredient-picker.tsx
+must_rewrite:
+  - path: src/services/eatup-api.ts
+    reason: "Expose typed calls for the existing ingredient, program, recipe, and shopping-list routes."
+  - path: src/components/ingredient-picker.tsx
+    reason: "Provide the shared search, category, and selection interaction used by two requested pages."
+  - path: src/app/week-program.tsx
+    reason: "Required target route for the source weekly-program page."
+  - path: src/app/ingredients-recipes.tsx
+    reason: "Required target route for the source ingredient recipe page."
+  - path: src/app/lista-spesa.tsx
+    reason: "Required target route for the source shopping-list page."
+  - path: src/app/index.tsx
+    reason: "Connect existing Home actions to the new target routes."
+copy_as_is:
+  - src/app/login.tsx
+  - src/app/register.tsx
+  - src/app/_layout.tsx
+  - Server/server.ts
+legacy_allowed_to_remain:
+  - ../Progetto_EatUp/Client/Client_EatUp
+defer_cleanup:
+  - "No Angular source cleanup is requested; the reference client remains unchanged."
+implementation_rule: >
+  Implement only must_rewrite target files. Do not edit authentication screens,
+  backend routes, database configuration, or the reference Angular project.

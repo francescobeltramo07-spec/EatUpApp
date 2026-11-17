@@ -1,0 +1,39 @@
+unit: ingredient_recipes
+side_effects:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:70"
+    effect: "Loads the ingredient catalog; loads saved recipe groups when signed in."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:132"
+    effect: "Submits selected ingredient names to generate and persist three recipe groups."
+    must_preserve: true
+branches:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:117"
+    condition: "No ingredients are selected."
+    behavior: "Do not generate; show selection guidance."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:125"
+    condition: "User is not signed in."
+    behavior: "Do not generate; show login guidance."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:153"
+    condition: "Search text is non-empty."
+    behavior: "Filter category visibility and ingredient names case-insensitively with diacritics normalized."
+    must_preserve: true
+error_paths:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:80"
+    trigger: "Ingredient catalog request fails."
+    outcome: "Show a catalog error and an empty catalog."
+    contract: "GET /api/getIngredients non-2xx is an error."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:137"
+    trigger: "Recipe generation fails."
+    outcome: "Show an Italian retry message and stop loading."
+    contract: "Non-2xx response must not be treated as success."
+    must_preserve: true
+concurrency:
+  model: async
+  tx_boundary:
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/ingredients-recipes/ingredients-recipes.ts:132"
+    scope: "One recipe-generation request; backend persists the result."
+    isolation: "No client-side transaction."
+    must_preserve: true

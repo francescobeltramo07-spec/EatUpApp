@@ -1,0 +1,113 @@
+contracts:
+  - name: ingredient-catalog
+    unit: ingredient_recipes
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:274"
+    contract:
+      method: GET
+      path: /api/getIngredients
+      request: "No body"
+      response: "Ingredient category array, or an object containing categories"
+      error: "503 database connection; 500 collection read"
+      auth: "Public route"
+    target_contract:
+      method: "getIngredients(): Promise<IngredientCategory[]>"
+      notes: "GET with credentials include; normalize array or categories wrapper."
+    semantic_divergence: []
+  - name: saved-week-program
+    unit: week_program
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:380"
+    contract:
+      method: GET
+      path: /api/weekProgram
+      request: "No body"
+      response: "Saved program with startDate, endDate, preferences, days; empty result is { days: [] }"
+      error: "403 missing/invalid token; 500 retrieval error"
+      auth: "JWT cookie or Bearer token"
+    target_contract:
+      method: "getWeekProgram(): Promise<WeekProgramResponse>"
+      notes: "Keep credentials include and current response normalization."
+    semantic_divergence: []
+  - name: generate-week-program
+    unit: week_program
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:318"
+    contract:
+      method: POST
+      path: /api/generateWeekProgram
+      request: "{ calorie, proteine?, carboidrati?, grassi?, fibre?, preferenze?, intolleranze? }"
+      response: "Saved program with seven dated days and four meal strings per day"
+      error: "400 invalid calories; 403 missing/invalid token; 500 AI/configuration error"
+      auth: "JWT cookie or Bearer token"
+    target_contract:
+      method: "generateWeekProgram(preferences: WeekProgramPreferences): Promise<WeekProgramResponse>"
+      notes: "Submit JSON without changing field names; present a clear error on non-2xx."
+    semantic_divergence: []
+  - name: saved-recipes
+    unit: ingredient_recipes
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:390"
+    contract:
+      method: GET
+      path: /api/generatedRecipes
+      request: "No body"
+      response: "Object with soloSelezionati, pochiExtra, daComprare recipe arrays"
+      error: "403 missing/invalid token; 500 retrieval error"
+      auth: "JWT cookie or Bearer token"
+    target_contract:
+      method: "getGeneratedRecipes(): Promise<RecipeGroups>"
+      notes: "Normalize absent groups to empty arrays."
+    semantic_divergence: []
+  - name: generate-recipes
+    unit: ingredient_recipes
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:492"
+    contract:
+      method: POST
+      path: /api/generateRecipesFromIngredients
+      request: "{ ingredients: string[] }"
+      response: "Three recipe arrays; recipe fields include title, quality, image, ingredients, extras, description"
+      error: "400 empty ingredients; 403 missing/invalid token; 500 AI/configuration error"
+      auth: "JWT cookie or Bearer token"
+    target_contract:
+      method: "generateRecipesFromIngredients(ingredients: string[]): Promise<RecipeGroups>"
+      notes: "Preserve Italian request field and three group keys."
+    semantic_divergence: []
+  - name: saved-shopping-list
+    unit: shopping_list
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:399"
+    contract:
+      method: GET
+      path: /api/shoppingList
+      request: "No body"
+      response: "{ categories: [{ categoria, items: [{ nome, quantita, motivo }] }], sources? }"
+      error: "403 missing/invalid token; 500 retrieval error"
+      auth: "JWT cookie or Bearer token"
+    target_contract:
+      method: "getShoppingList(): Promise<ShoppingListResponse>"
+      notes: "Normalize no saved list to an empty categories array."
+    semantic_divergence: []
+  - name: generate-shopping-list
+    unit: shopping_list
+    type: rest
+    stability: frozen
+    source_loc: "Server/server.ts:408"
+    contract:
+      method: POST
+      path: /api/generateShoppingList
+      request: "{ availableIngredients: string[] }"
+      response: "{ categories, sources: { weekProgram, recipes }, cached? }"
+      error: "403 missing/invalid token; 500 AI/configuration error"
+      auth: "JWT cookie or Bearer token"
+    target_contract:
+      method: "generateShoppingList(availableIngredients: string[]): Promise<ShoppingListResponse>"
+      notes: "Do not retry automatically; generation may invoke a paid AI provider."
+    semantic_divergence: []

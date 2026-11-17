@@ -1,7 +1,8 @@
 import { fireEvent, render } from "@testing-library/react-native";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import HomeScreen from "../app";
-import { router, useLocalSearchParams } from "expo-router";
+import HomeScreen from "../app/(tabs)/index";
+import { router } from "expo-router";
+import { useAuth } from "../contexts/auth-context";
 import { eatUpApi } from "../services/eatup-api";
 import React from "react";
 
@@ -9,7 +10,10 @@ jest.mock("expo-router", () => ({
   router: {
     push: jest.fn(),
   },
-  useLocalSearchParams: jest.fn(() => ({})),
+}));
+
+jest.mock("../contexts/auth-context", () => ({
+  useAuth: jest.fn(),
 }));
 
 jest.mock("../services/eatup-api", () => ({
@@ -18,13 +22,13 @@ jest.mock("../services/eatup-api", () => ({
   },
 }));
 
-const mockedParams = jest.mocked(useLocalSearchParams);
+const mockedAuth = jest.mocked(useAuth);
 const mockedEatUpApi = jest.mocked(eatUpApi);
 
 describe("home screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedParams.mockReturnValue({});
+    mockedAuth.mockReturnValue({ signedIn: false, setSignedIn: jest.fn() });
   });
 
   it("renders the EatUp home content and feature cards", async () => {
@@ -48,10 +52,33 @@ describe("home screen", () => {
     expect(mockedEatUpApi.getWeekProgram).not.toHaveBeenCalled();
   });
 
+  it("opens all feature routes directly for signed-in users", async () => {
+    mockedAuth.mockReturnValue({ signedIn: true, setSignedIn: jest.fn() });
+    mockedEatUpApi.getWeekProgram.mockResolvedValue({ days: [] });
+    const { getAllByText, getByText } = await render(<HomeScreen />);
+
+    await fireEvent.press(getByText("Trova ricette"));
+    await fireEvent.press(getByText("Programma settimana"));
+    await fireEvent.press(getAllByText("Lista della spesa")[0]);
+
+    expect(router.push).toHaveBeenNthCalledWith(
+      1,
+      "/ingredients-recipes",
+    );
+    expect(router.push).toHaveBeenNthCalledWith(
+      2,
+      "/week-program",
+    );
+    expect(router.push).toHaveBeenNthCalledWith(
+      3,
+      "/lista-spesa",
+    );
+  });
+
   it("loads and displays today's saved meals after login", async () => {
     const today = new Date();
     const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    mockedParams.mockReturnValue({ signedIn: "true" });
+    mockedAuth.mockReturnValue({ signedIn: true, setSignedIn: jest.fn() });
     mockedEatUpApi.getWeekProgram.mockResolvedValue({
       days: [
         {
@@ -76,7 +103,7 @@ describe("home screen", () => {
   });
 
   it("shows a clear empty state when there is no plan for today", async () => {
-    mockedParams.mockReturnValue({ signedIn: "true" });
+    mockedAuth.mockReturnValue({ signedIn: true, setSignedIn: jest.fn() });
     mockedEatUpApi.getWeekProgram.mockResolvedValue({ days: [] });
 
     const { findByText } = await render(<HomeScreen />);
@@ -85,7 +112,7 @@ describe("home screen", () => {
   });
 
   it("allows retry after a failed protected request", async () => {
-    mockedParams.mockReturnValue({ signedIn: "true" });
+    mockedAuth.mockReturnValue({ signedIn: true, setSignedIn: jest.fn() });
     mockedEatUpApi.getWeekProgram
       .mockRejectedValueOnce(new Error("request failed"))
       .mockResolvedValueOnce({ days: [] });

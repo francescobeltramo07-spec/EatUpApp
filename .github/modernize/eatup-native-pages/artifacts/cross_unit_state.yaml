@@ -1,0 +1,43 @@
+flows:
+  - name: authenticated-api-cookie
+    medium: cookie
+    key: TOKEN
+    writer:
+      unit: external
+      source_loc: "src/app/login.tsx:30"
+    reader:
+      unit: week_program
+      source_loc: "src/services/eatup-api.ts:61"
+    pairing: external-writer
+    must_preserve: true
+    must_confirm: runtime
+    verification_hint: "After successful login, a protected GET /api/weekProgram returns 2xx in the native runtime."
+    notes: "The existing login route sets the HTTP-only cookie; requests must continue to use credentials: include."
+  - name: authenticated-api-cookie-recipes
+    medium: cookie
+    key: TOKEN
+    writer:
+      unit: external
+      source_loc: "src/app/login.tsx:30"
+    reader:
+      unit: ingredient_recipes
+      source_loc: "src/services/eatup-api.ts"
+    pairing: external-writer
+    must_preserve: true
+    must_confirm: runtime
+    verification_hint: "After successful login, saved recipes and recipe generation use the authenticated session."
+    notes: "The backend route is protected by the same JWT cookie."
+  - name: authenticated-api-cookie-shopping
+    medium: cookie
+    key: TOKEN
+    writer:
+      unit: external
+      source_loc: "src/app/login.tsx:30"
+    reader:
+      unit: shopping_list
+      source_loc: "src/services/eatup-api.ts"
+    pairing: external-writer
+    must_preserve: true
+    must_confirm: runtime
+    verification_hint: "After successful login, saved shopping list and generation use the authenticated session."
+    notes: "Ingredient catalog reads remain public; shopping-list reads and writes require the session."

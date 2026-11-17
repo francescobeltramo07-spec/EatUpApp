@@ -1,0 +1,21 @@
+unit: shopping_list
+bindings:
+  - type: route-declaration
+    name: "/lista-spesa"
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/app.routes.ts:36"
+    target: "src/app/lista-spesa.tsx"
+    must_appear_in_target: true
+    notes: "Expo Router derives the route from the filename."
+  - type: route-declaration
+    name: "GET and POST shopping-list API calls"
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/services/common-service.ts:59"
+    target: "src/services/eatup-api.ts"
+    must_appear_in_target: true
+    notes: "Use the existing endpoints and availableIngredients field."
+runtime_config:
+  - key: EATUP_API_ORIGIN
+    source_loc: "app.config.ts:7"
+    source: env
+    default_value: ""
+    must_appear_in_target: true
+    notes: "Existing Expo API origin configuration."

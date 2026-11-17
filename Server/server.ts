@@ -21,7 +21,7 @@ import Groq from "groq-sdk";
 const app: express.Express = express();
 // prende le configurazioni dal file .env
 dotenv.config({ path: './.env' });
-const connectionString = process.env.connectionStringAtlas;  //process.env.connectionStringLocal    process.env.connectionStringAtlas
+const connectionString = process.env.connectionStringLocal;  //process.env.connectionStringLocal    process.env.connectionStringAtlas
 const dbName = process.env.dbName;
 //const PORT = parseInt(process.env.PORT!);
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT!);

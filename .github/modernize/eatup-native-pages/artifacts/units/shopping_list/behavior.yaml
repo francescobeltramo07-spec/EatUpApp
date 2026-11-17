@@ -1,0 +1,39 @@
+unit: shopping_list
+side_effects:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:74"
+    effect: "Loads the ingredient catalog and, when signed in, the saved shopping list."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:144"
+    effect: "Submits available ingredient names; backend combines them with saved recipes and weekly program."
+    must_preserve: true
+branches:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:137"
+    condition: "User is not signed in."
+    behavior: "Do not generate; show login-required state."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:155"
+    condition: "No saved program, recipes, or shopping items are returned."
+    behavior: "Explain that a recipe or weekly program must be generated first."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:163"
+    condition: "User checks or unchecks an item."
+    behavior: "Update checked count; select-all and reset act on every item."
+    must_preserve: true
+error_paths:
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:103"
+    trigger: "Ingredient catalog request fails."
+    outcome: "Show catalog error and an empty catalog."
+    contract: "GET /api/getIngredients non-2xx is an error."
+    must_preserve: true
+  - source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:160"
+    trigger: "Shopping-list generation fails."
+    outcome: "Show an Italian retry message and stop loading."
+    contract: "Non-2xx response must not be treated as success."
+    must_preserve: true
+concurrency:
+  model: async
+  tx_boundary:
+    source_loc: "../Progetto_EatUp/Client/Client_EatUp/src/app/lista-spesa/lista-spesa.ts:144"
+    scope: "One generation request; backend persists the completed list."
+    isolation: "No client-side transaction."
+    must_preserve: true

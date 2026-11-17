@@ -7,24 +7,34 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams, type Href } from "expo-router";
-import { eatUpApi, type WeekProgramResponse } from "../services/eatup-api";
+import { router, type Href } from "expo-router";
+import { eatUpApi, type WeekProgramResponse } from "../../services/eatup-api";
+import { useAuth } from "../../contexts/auth-context";
 
 const features = [
   {
     title: "Ingredienti smart",
     description:
       "Seleziona quello che hai già in cucina e lascia che EatUp trovi idee utili.",
+    route: "/ingredients-recipes",
   },
   {
     title: "Ricette con AI",
     description:
       "Ottieni ricette divise tra immediate, con pochi extra e da spesa mirata.",
+    route: "/ingredients-recipes",
   },
   {
     title: "Programma settimanale",
     description:
       "Genera colazione, pranzo, merenda e cena partendo dai tuoi obiettivi.",
+    route: "/week-program",
+  },
+  {
+    title: "Lista della spesa",
+    description:
+      "Combina ricette e programma in una lista organizzata per la spesa.",
+    route: "/lista-spesa",
   },
 ];
 
@@ -36,12 +46,15 @@ const meals = [
 ] as const;
 
 export default function Index() {
-  const params = useLocalSearchParams();
-  const signedIn = params.signedIn === "true";
+  const { signedIn } = useAuth();
   const [program, setProgram] = useState<WeekProgramResponse | null>(null);
   const [programLoading, setProgramLoading] = useState(true);
   const [programError, setProgramError] = useState(false);
   const [refreshNumber, setRefreshNumber] = useState(0);
+
+  function openFeature(route: string, signedOutRoute = "/login") {
+    router.push((signedIn ? route : signedOutRoute) as Href);
+  }
 
   useEffect(() => {
     if (!signedIn) {
@@ -111,7 +124,9 @@ export default function Index() {
             <View style={styles.actions}>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push("/login" as Href)}
+                onPress={() =>
+                  openFeature("/ingredients-recipes")
+                }
                 style={({ pressed }) => [
                   styles.primaryAction,
                   pressed && styles.pressed,
@@ -121,7 +136,7 @@ export default function Index() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push("/register" as Href)}
+                onPress={() => openFeature("/week-program", "/register")}
                 style={({ pressed }) => [
                   styles.secondaryAction,
                   pressed && styles.pressed,
@@ -130,6 +145,16 @@ export default function Index() {
                 <Text style={styles.secondaryActionText}>
                   Programma settimana
                 </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => openFeature("/lista-spesa")}
+                style={({ pressed }) => [
+                  styles.secondaryAction,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.secondaryActionText}>Lista della spesa</Text>
               </Pressable>
             </View>
 
@@ -226,12 +251,20 @@ export default function Index() {
 
         <View style={styles.features}>
           {features.map((feature) => (
-            <View key={feature.title} style={styles.featureCard}>
+            <Pressable
+              accessibilityRole="button"
+              key={feature.title}
+              onPress={() => openFeature(feature.route)}
+              style={({ pressed }) => [
+                styles.featureCard,
+                pressed && styles.pressed,
+              ]}
+            >
               <Text style={styles.featureTitle}>{feature.title}</Text>
               <Text style={styles.featureDescription}>
                 {feature.description}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       </ScrollView>

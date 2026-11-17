@@ -139,6 +139,11 @@ export type ShoppingListResponse = {
   cached?: boolean;
 };
 
+export type ShoppingListSourceSelection = {
+  weekProgram: boolean;
+  recipes: boolean;
+};
+
 export function createEatUpAuthApi(
   configuredOrigin: unknown,
   fetcher: typeof fetch = fetch,
@@ -208,9 +213,13 @@ export function createEatUpAuthApi(
     generateRecipesFromIngredients: (ingredients: string[]) =>
       postJson<RecipeGroups>("generateRecipesFromIngredients", { ingredients }),
     getShoppingList: () => getJson<ShoppingListResponse>("shoppingList"),
-    generateShoppingList: (availableIngredients: string[]) =>
+    generateShoppingList: (
+      availableIngredients: string[],
+      sources: ShoppingListSourceSelection,
+    ) =>
       postJson<ShoppingListResponse>("generateShoppingList", {
         availableIngredients,
+        sources,
       }),
   };
 }
@@ -261,8 +270,12 @@ export const eatUpApi = {
     ),
   getShoppingList: () =>
     createEatUpAuthApi(configuredOrigin()).getShoppingList(),
-  generateShoppingList: (availableIngredients: string[]) =>
+  generateShoppingList: (
+    availableIngredients: string[],
+    sources: ShoppingListSourceSelection,
+  ) =>
     createEatUpAuthApi(configuredOrigin()).generateShoppingList(
       availableIngredients,
+      sources,
     ),
 };

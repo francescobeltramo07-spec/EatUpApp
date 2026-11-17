@@ -19,6 +19,8 @@ import Groq from "groq-sdk";
 
 //b. callback
 const app: express.Express = express();
+// Ngrok gira localmente e inoltra le richieste al server da loopback.
+app.set("trust proxy", "loopback");
 // prende le configurazioni dal file .env
 dotenv.config({ path: './.env' });
 const connectionString = process.env.connectionStringLocal;  //process.env.connectionStringLocal    process.env.connectionStringAtlas
@@ -449,7 +451,7 @@ app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: 
         const ownedIngredients = uniqueStrings([...availableIngredients, ...recipeSourceIngredients]);
         const recipesForShoppingList = hasRecipes ? compactRecipesForShoppingList(latestRecipes.groups) : {};
         const shoppingList = await generateJson(
-            "Sei l'assistente spesa di EatUp. Genera una lista concreta, ordinata per categoria e senza ingredienti gia disponibili.",
+            "Sei l'assistente spesa di EatUp. Genera una lista concreta, ordinata per categoria e senza ingredienti gia disponibili. Restituisci esclusivamente un documento JSON valido, senza testo introduttivo, commenti, Markdown o blocchi di codice, nel formato {\"categories\":[{\"categoria\":\"Frutta e verdura\",\"items\":[{\"nome\":\"Pomodori\",\"quantita\":\"1 kg\",\"motivo\":\"programma settimanale\"}]}]}. Se non servono acquisti, restituisci {\"categories\":[]}.",
             {
                 richiesta: "Crea una lista della spesa automatica in italiano partendo dalle ricette generate e dal programma settimanale.",
                 ingredientiGiaDisponibili: ownedIngredients,
@@ -466,7 +468,8 @@ app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: 
             },
             "shopping_list",
             shoppingListSchema(),
-            0.2
+            0.2,
+            true
         );
 
         const normalizedShoppingList = normalizeShoppingList(shoppingList);
@@ -485,6 +488,13 @@ app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: 
 
         return res.send(shoppingListResponse);
     } catch (err: any) {
+        console.error("[POST /api/generateShoppingList] Errore durante la generazione:", {
+            name: err?.name,
+            message: err?.message,
+            status: err?.status,
+            code: err?.code ?? err?.error?.error?.code ?? err?.error?.code,
+            requestId: err?.headers?.get?.("x-request-id")
+        });
         return res.status(500).send("Errore durante la generazione della lista della spesa");
     }
 });
@@ -576,7 +586,8 @@ async function generateJson(
     payload: unknown,
     schemaName: string,
     schema: Record<string, any>,
-    temperature: number
+    temperature: number,
+    allowJsonObjectFallback = false
 ) {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
@@ -588,33 +599,87 @@ async function generateJson(
     if (!groqClient) {
         groqClient = new Groq({ apiKey });
     }
+    const modelOptions = GROQ_MODEL.startsWith("openai/gpt-oss-")
+        ? { include_reasoning: false, reasoning_effort: "low" as const }
+        : {};
 
-    const response = await groqClient.chat.completions.create({
-        model: GROQ_MODEL,
-        messages: [
+    const messages = [
+        {
+            role: "system" as const,
+            content: `${system} Rispondi esclusivamente in lingua italiana e rispetta lo schema JSON.`
+        },
+        {
+            role: "user" as const,
+            content: JSON.stringify(payload)
+        }
+    ];
+    let response;
+
+    try {
+        response = await groqClient.chat.completions.create({
+            model: GROQ_MODEL,
+            messages,
+            temperature,
+            ...modelOptions,
+            response_format: {
+                type: "json_schema",
+                json_schema: {
+                    name: schemaName,
+                    strict: true,
+                    schema
+                }
+            }
+        });
+    } catch (err: any) {
+        const errorCode = err?.code ?? err?.error?.error?.code ?? err?.error?.code;
+        if (!allowJsonObjectFallback || err?.status !== 400 || errorCode !== "json_validate_failed") {
+            throw err;
+        }
+
+        console.warn(`[Groq ${schemaName}] Validazione JSON strutturata fallita; riprovo in JSON mode.`, {
+            requestId: err?.headers?.get?.("x-request-id")
+        });
+        const fallbackMessages = [
             {
-                role: "system",
-                content: `${system} Rispondi esclusivamente in lingua italiana e rispetta lo schema JSON.`
+                role: "system" as const,
+                content: `${system} Rispondi esclusivamente in lingua italiana. Restituisci un singolo oggetto JSON valido e rispetta esattamente questo schema: ${JSON.stringify(schema)}`
             },
             {
-                role: "user",
+                role: "user" as const,
                 content: JSON.stringify(payload)
             }
-        ],
-        temperature,
-        response_format: {
-            type: "json_schema",
-            json_schema: {
-                name: schemaName,
-                strict: true,
-                schema
-            }
-        }
-    });
+        ];
 
-    const content = response.choices[0]?.message?.content;
+        try {
+            response = await groqClient.chat.completions.create({
+                model: GROQ_MODEL,
+                messages: fallbackMessages,
+                temperature,
+                ...modelOptions,
+                response_format: { type: "json_object" }
+            });
+        } catch (fallbackError: any) {
+            const fallbackErrorCode = fallbackError?.code ?? fallbackError?.error?.error?.code ?? fallbackError?.error?.code;
+            if (fallbackError?.status !== 400 || fallbackErrorCode !== "json_validate_failed") {
+                throw fallbackError;
+            }
+
+            console.warn(`[Groq ${schemaName}] JSON mode non riuscita; riprovo senza response_format.`, {
+                requestId: fallbackError?.headers?.get?.("x-request-id")
+            });
+            response = await groqClient.chat.completions.create({
+                model: GROQ_MODEL,
+                messages: fallbackMessages,
+                temperature,
+                ...modelOptions
+            });
+        }
+    }
+
+    const choice = response.choices[0];
+    const content = choice?.message?.content;
     if (!content) {
-        throw new Error("Groq non ha restituito contenuto JSON");
+        throw new Error(`Groq non ha restituito contenuto JSON (finish_reason=${choice?.finish_reason ?? "sconosciuto"})`);
     }
     return JSON.parse(content);
 }

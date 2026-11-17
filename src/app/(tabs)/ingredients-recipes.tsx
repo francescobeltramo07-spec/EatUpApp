@@ -80,6 +80,7 @@ export default function IngredientsRecipesScreen() {
     normalizeGroups({}),
   );
   const [loadingIngredients, setLoadingIngredients] = useState(true);
+  const [ingredientPickerExpanded, setIngredientPickerExpanded] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [imageFailures, setImageFailures] = useState<Record<string, boolean>>(
@@ -126,7 +127,11 @@ export default function IngredientsRecipesScreen() {
       .getGeneratedRecipes()
       .then((data) => {
         if (active) {
-          setRecipeGroups(normalizeGroups(data));
+          const savedGroups = normalizeGroups(data);
+          setRecipeGroups(savedGroups);
+          if (savedGroups.some((group) => group.recipes.length > 0)) {
+            setIngredientPickerExpanded(false);
+          }
         }
       })
       .catch(() => {
@@ -159,6 +164,7 @@ export default function IngredientsRecipesScreen() {
       const data = await eatUpApi.generateRecipesFromIngredients(ingredients);
       setRecipeGroups(normalizeGroups(data));
       setImageFailures({});
+      setIngredientPickerExpanded(false);
     } catch {
       setError("Non sono riuscito a generare le ricette. Riprova tra poco.");
     } finally {
@@ -224,7 +230,9 @@ export default function IngredientsRecipesScreen() {
         <IngredientPicker
           categories={categories}
           loading={loadingIngredients}
+          onPanelExpandedChange={setIngredientPickerExpanded}
           onSelectionChange={setSelectedIngredients}
+          panelExpanded={ingredientPickerExpanded}
           selectedIngredients={selectedIngredients}
         />
 

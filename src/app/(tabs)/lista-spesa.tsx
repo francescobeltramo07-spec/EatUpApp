@@ -127,6 +127,7 @@ export default function ShoppingListScreen() {
     recipes: false,
   });
   const [sourceChoice, setSourceChoice] = useState<ShoppingSourceChoice>("both");
+  const [ingredientPickerExpanded, setIngredientPickerExpanded] = useState(true);
   const [loadingIngredients, setLoadingIngredients] = useState(signedIn);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -174,7 +175,11 @@ export default function ShoppingListScreen() {
       .getShoppingList()
       .then((response) => {
         if (active) {
-          setShoppingCategories(normalizeShoppingList(response));
+          const savedCategories = normalizeShoppingList(response);
+          setShoppingCategories(savedCategories);
+          if (savedCategories.length > 0) {
+            setIngredientPickerExpanded(false);
+          }
           const savedSources = getSources(response);
           setSources(savedSources);
           const savedChoice = getSourceChoice(savedSources);
@@ -265,6 +270,7 @@ export default function ShoppingListScreen() {
       const nextSources = getSources(response);
       setShoppingCategories(nextCategories);
       setSources(nextSources);
+      setIngredientPickerExpanded(false);
 
       if (!nextSources.weekProgram && !nextSources.recipes) {
         setError(
@@ -381,7 +387,9 @@ export default function ShoppingListScreen() {
         <IngredientPicker
           categories={categories}
           loading={loadingIngredients}
+          onPanelExpandedChange={setIngredientPickerExpanded}
           onSelectionChange={setSelectedIngredients}
+          panelExpanded={ingredientPickerExpanded}
           selectedIngredients={selectedIngredients}
         />
 

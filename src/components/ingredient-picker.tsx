@@ -16,6 +16,8 @@ type IngredientPickerProps = {
   categories: IngredientCategory[];
   selectedIngredients: Ingredient[];
   onSelectionChange: (ingredients: Ingredient[]) => void;
+  panelExpanded?: boolean;
+  onPanelExpandedChange?: (expanded: boolean) => void;
   loading?: boolean;
 };
 
@@ -51,10 +53,14 @@ export function IngredientPicker({
   categories,
   selectedIngredients,
   onSelectionChange,
+  panelExpanded: controlledPanelExpanded,
+  onPanelExpandedChange,
   loading = false,
 }: IngredientPickerProps) {
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [localPanelExpanded, setLocalPanelExpanded] = useState(true);
+  const panelExpanded = controlledPanelExpanded ?? localPanelExpanded;
   const query = normalizeIngredientSearch(search);
   const visibleCategories = categories
     .map((category, index) => {
@@ -88,13 +94,28 @@ export function IngredientPicker({
     return category.categoria ?? category.category ?? "Altro";
   }
 
+  function togglePanel() {
+    const nextExpanded = !panelExpanded;
+    setLocalPanelExpanded(nextExpanded);
+    onPanelExpandedChange?.(nextExpanded);
+  }
+
   return (
     <View style={styles.panel}>
-      <View style={styles.heading}>
-        <Text style={styles.eyebrow}>Ingredienti</Text>
+      <Pressable
+        accessibilityLabel={`${panelExpanded ? "Nascondi" : "Mostra"} ingredienti in casa`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: panelExpanded }}
+        onPress={togglePanel}
+        style={styles.heading}
+      >
+        <Text style={styles.eyebrow}>Ingredienti in casa</Text>
         <Text style={styles.count}>{selectedIngredients.length}</Text>
-      </View>
+        <Text style={styles.panelChevron}>{panelExpanded ? "⌃" : "⌄"}</Text>
+      </Pressable>
 
+      {panelExpanded ? (
+        <>
       <TextInput
         accessibilityLabel="Cerca ingrediente"
         autoCapitalize="none"
@@ -137,14 +158,14 @@ export function IngredientPicker({
         <View style={styles.categories}>
           {visibleCategories.map(({ category, index, ingredients }) => {
             const key = `${categoryTitle(category)}-${index}`;
-            const isOpen = expanded[key] ?? index === 0;
+            const isOpen = expandedCategories[key] ?? index === 0;
             return (
               <View key={key} style={styles.category}>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ expanded: isOpen }}
                   onPress={() =>
-                    setExpanded((current) => ({
+                    setExpandedCategories((current) => ({
                       ...current,
                       [key]: !isOpen,
                     }))
@@ -185,6 +206,21 @@ export function IngredientPicker({
           })}
         </View>
       )}
+        </>
+      ) : (
+        <View style={styles.collapsedSummary}>
+          {selectedIngredients.length > 0 ? (
+            <Text numberOfLines={2} style={styles.muted}>
+              {selectedIngredients.slice(0, 4).map(getIngredientName).join(", ")}
+              {selectedIngredients.length > 4
+                ? ` +${selectedIngredients.length - 4}`
+                : ""}
+            </Text>
+          ) : (
+            <Text style={styles.muted}>Nessun ingrediente selezionato</Text>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -197,9 +233,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   heading: {
+    minHeight: 34,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 8,
+  },
+  panelChevron: {
+    marginLeft: "auto",
+    color: "#F97316",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  collapsedSummary: {
+    minHeight: 20,
   },
   eyebrow: {
     color: "#F97316",

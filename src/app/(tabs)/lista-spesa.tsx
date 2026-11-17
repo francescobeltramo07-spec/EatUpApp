@@ -18,6 +18,7 @@ import type {
   IngredientCategory,
   ShoppingListCategory,
   ShoppingListResponse,
+  ShoppingListSourceSelection,
 } from "../../services/eatup-api";
 import { eatUpApi } from "../../services/eatup-api";
 
@@ -38,6 +39,50 @@ type Sources = {
   weekProgram: boolean;
   recipes: boolean;
 };
+
+type ShoppingSourceChoice = "weekProgram" | "recipes" | "both";
+
+const shoppingSourceOptions: {
+  value: ShoppingSourceChoice;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "weekProgram",
+    label: "Piano settimanale",
+    description: "Usa solo i pasti del piano",
+  },
+  {
+    value: "recipes",
+    label: "Ricette generate",
+    description: "Usa solo le ricette salvate",
+  },
+  {
+    value: "both",
+    label: "Entrambi",
+    description: "Combina piano e ricette",
+  },
+];
+
+function getSourceSelection(choice: ShoppingSourceChoice): ShoppingListSourceSelection {
+  return {
+    weekProgram: choice === "weekProgram" || choice === "both",
+    recipes: choice === "recipes" || choice === "both",
+  };
+}
+
+function getSourceChoice(sources: Sources): ShoppingSourceChoice | null {
+  if (sources.weekProgram && sources.recipes) {
+    return "both";
+  }
+  if (sources.weekProgram) {
+    return "weekProgram";
+  }
+  if (sources.recipes) {
+    return "recipes";
+  }
+  return null;
+}
 
 function normalizeShoppingList(
   response: ShoppingListResponse,
@@ -81,6 +126,7 @@ export default function ShoppingListScreen() {
     weekProgram: false,
     recipes: false,
   });
+  const [sourceChoice, setSourceChoice] = useState<ShoppingSourceChoice>("both");
   const [loadingIngredients, setLoadingIngredients] = useState(signedIn);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -129,7 +175,12 @@ export default function ShoppingListScreen() {
       .then((response) => {
         if (active) {
           setShoppingCategories(normalizeShoppingList(response));
-          setSources(getSources(response));
+          const savedSources = getSources(response);
+          setSources(savedSources);
+          const savedChoice = getSourceChoice(savedSources);
+          if (savedChoice) {
+            setSourceChoice(savedChoice);
+          }
         }
       })
       .catch(() => {
@@ -208,18 +259,21 @@ export default function ShoppingListScreen() {
     try {
       const response = await eatUpApi.generateShoppingList(
         selectedIngredients.map(getIngredientName),
+        getSourceSelection(sourceChoice),
       );
       const nextCategories = normalizeShoppingList(response);
       const nextSources = getSources(response);
       setShoppingCategories(nextCategories);
       setSources(nextSources);
 
-      if (
-        nextCategories.length === 0 &&
-        !nextSources.weekProgram &&
-        !nextSources.recipes
-      ) {
-        setError("Genera prima ricette o un programma settimanale.");
+      if (!nextSources.weekProgram && !nextSources.recipes) {
+        setError(
+          sourceChoice === "weekProgram"
+            ? "Genera prima un programma settimanale."
+            : sourceChoice === "recipes"
+              ? "Genera prima alcune ricette."
+              : "Genera prima ricette o un programma settimanale.",
+        );
       }
     } catch {
       setError(
@@ -266,19 +320,57 @@ export default function ShoppingListScreen() {
               Lista della spesa automatica
             </Text>
           </View>
-          <Pressable
-            accessibilityLabel="Genera lista"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: generating, busy: generating }}
-            disabled={generating}
-            onPress={generateList}
-            style={[styles.primaryButton, generating && styles.buttonDisabled]}
-          >
-            <Text style={styles.primaryButtonText}>
-              {generating ? "Generazione in corso..." : "Genera lista"}
-            </Text>
-          </Pressable>
         </View>
+
+        <View style={styles.sourceSelector}>
+          <Text style={styles.sectionTitle}>Cosa vuoi includere?</Text>
+          <Text style={styles.bodyText}>
+            Scegli le fonti da usare per creare questa lista.
+          </Text>
+          <View style={styles.sourceOptions}>
+            {shoppingSourceOptions.map((option) => {
+              const selected = sourceChoice === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  disabled={generating}
+                  onPress={() => setSourceChoice(option.value)}
+                  style={[
+                    styles.sourceOption,
+                    selected && styles.sourceOptionSelected,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.sourceOptionTitle,
+                      selected && styles.sourceOptionTitleSelected,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  <Text style={styles.sourceOptionDescription}>
+                    {option.description}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <Pressable
+          accessibilityLabel="Genera lista"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: generating, busy: generating }}
+          disabled={generating}
+          onPress={generateList}
+          style={[styles.primaryButton, generating && styles.buttonDisabled]}
+        >
+          <Text style={styles.primaryButtonText}>
+            {generating ? "Generazione in corso..." : "Genera lista"}
+          </Text>
+        </Pressable>
 
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -478,6 +570,41 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     backgroundColor: "#FFFFFF",
+  },
+  sourceSelector: {
+    gap: 8,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  sourceOptions: {
+    gap: 8,
+    marginTop: 4,
+  },
+  sourceOption: {
+    gap: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 9,
+    backgroundColor: "#FFFFFF",
+  },
+  sourceOptionSelected: {
+    borderColor: "#F97316",
+    backgroundColor: "#FFF7ED",
+  },
+  sourceOptionTitle: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  sourceOptionTitleSelected: {
+    color: "#9A3412",
+  },
+  sourceOptionDescription: {
+    color: "#64748B",
+    fontSize: 12,
   },
   summaryText: {
     gap: 5,

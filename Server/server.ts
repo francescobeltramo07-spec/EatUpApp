@@ -410,15 +410,24 @@ app.get('/api/shoppingList', async function (req: any, res: any) {
 app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: any) {
     try {
         const availableIngredients = normalizeStringArray(req.body?.availableIngredients);
+        const selectedSources = {
+            weekProgram: req.body?.sources?.weekProgram !== false,
+            recipes: req.body?.sources?.recipes !== false
+        };
+        if (!selectedSources.weekProgram && !selectedSources.recipes) {
+            return res.status(400).send("Seleziona almeno una fonte per la lista della spesa");
+        }
+
         const latestWeekProgram = await getLatestWeekProgram(req.username);
         const latestRecipes = await getLatestGeneratedRecipes(req.username);
 
-        const hasWeekProgram = Array.isArray(latestWeekProgram?.days) && latestWeekProgram.days.length > 0;
-        const hasRecipes = !!latestRecipes && hasGeneratedRecipeContent(latestRecipes.groups);
+        const hasWeekProgram = selectedSources.weekProgram && Array.isArray(latestWeekProgram?.days) && latestWeekProgram.days.length > 0;
+        const hasRecipes = selectedSources.recipes && !!latestRecipes && hasGeneratedRecipeContent(latestRecipes.groups);
         const generationSignature = createShoppingListSignature(
             availableIngredients,
-            latestWeekProgram,
-            latestRecipes
+            selectedSources,
+            hasWeekProgram ? latestWeekProgram : null,
+            hasRecipes ? latestRecipes : null
         );
         const savedShoppingList = await getLatestShoppingList(req.username);
 
@@ -447,23 +456,30 @@ app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: 
             return res.status(500).send("GROQ_API_KEY non configurato nel file .env");
         }
 
-        const recipeSourceIngredients = normalizeStringArray(latestRecipes?.sourceIngredients);
+        const recipeSourceIngredients = hasRecipes
+            ? normalizeStringArray(latestRecipes?.sourceIngredients)
+            : [];
         const ownedIngredients = uniqueStrings([...availableIngredients, ...recipeSourceIngredients]);
         const recipesForShoppingList = hasRecipes ? compactRecipesForShoppingList(latestRecipes.groups) : {};
+        const requiredRecipeIngredients = getRecipeIngredients(recipesForShoppingList)
+            .filter((ingredient) => !containsIngredient(ownedIngredients, ingredient));
         const shoppingList = await generateJson(
-            "Sei l'assistente spesa di EatUp. Genera una lista concreta, ordinata per categoria e senza ingredienti gia disponibili. Restituisci esclusivamente un documento JSON valido, senza testo introduttivo, commenti, Markdown o blocchi di codice, nel formato {\"categories\":[{\"categoria\":\"Frutta e verdura\",\"items\":[{\"nome\":\"Pomodori\",\"quantita\":\"1 kg\",\"motivo\":\"programma settimanale\"}]}]}. Se non servono acquisti, restituisci {\"categories\":[]}.",
+            "Sei l'assistente spesa di EatUp. Crea una lista completa: per ogni pasto del piano selezionato e per ogni ricetta selezionata, includi tutti gli ingredienti necessari. Non saltare ingredienti comuni come olio, sale, pepe o spezie: escludili solo se sono elencati tra quelli gia disponibili. Per le ricette, considera obbligatori tutti gli ingredienti presenti in ingredienti e ingredientiExtra, tranne quelli gia disponibili. Per ogni pasto del piano, identifica la pietanza e ricontrolla gli ingredienti che servono per prepararla. Accorpa solo duplicati reali; non sostituire ingredienti specifici con voci generiche. Prima di rispondere, verifica che ogni pasto e ricetta sia coperto dalla lista. Restituisci esclusivamente un documento JSON valido, senza testo introduttivo, commenti, Markdown o blocchi di codice, nel formato {\"categories\":[{\"categoria\":\"Frutta e verdura\",\"items\":[{\"nome\":\"Pomodori\",\"quantita\":\"1 kg\",\"motivo\":\"programma settimanale\"}]}]}. Se non servono acquisti, restituisci {\"categories\":[]}.",
             {
-                richiesta: "Crea una lista della spesa automatica in italiano partendo dalle ricette generate e dal programma settimanale.",
+                richiesta: "Crea una lista della spesa completa in italiano usando tutte e sole le fonti selezionate. Copri ogni pietanza, senza omettere ingredienti necessari.",
                 ingredientiGiaDisponibili: ownedIngredients,
                 programmaSettimanale: hasWeekProgram ? latestWeekProgram.days : [],
                 ricetteGenerate: recipesForShoppingList,
+                ingredientiRicetteDaIncludere: requiredRecipeIngredients,
                 regole: [
-                    "Includi solo ingredienti probabilmente mancanti o necessari per preparare i pasti.",
-                    "Non includere acqua, sale, pepe, olio, spezie comuni o ingredienti gia disponibili.",
-                    "Accorpa duplicati e varianti simili nello stesso elemento.",
-                    "Usa quantita pratiche quando deducibili, altrimenti scrivi 'q.b.'.",
+                    "Includi ogni ingrediente necessario per ciascun pasto e ricetta selezionati, anche se e' un ingrediente comune o una quantita piccola.",
+                    "ingredientiRicetteDaIncludere e' una checklist obbligatoria: ogni voce deve apparire nella lista, salvo duplicati equivalenti gia presenti.",
+                    "Escludi esclusivamente gli ingredienti elencati in ingredientiGiaDisponibili.",
+                    "Accorpa duplicati identici, ma non unire ingredienti diversi in voci vaghe come 'verdure' o 'spezie'.",
+                    "Indica quantita realistiche quando deducibili dai pasti; se la fonte non le specifica, usa 'q.b.' invece di inventare dosi precise.",
                     "Ordina gli elementi per categorie da supermercato: Frutta e verdura, Pane pasta e cereali, Carne pesce e uova, Latticini, Dispensa, Surgelati, Altro.",
-                    "Nel motivo indica in modo breve se serve per ricette, programma settimanale o entrambi."
+                    "Nel motivo indica in modo breve se serve per ricette, programma settimanale o entrambi.",
+                    "Non inventare pasti o ingredienti che non siano necessari alle fonti ricevute."
                 ]
             },
             "shopping_list",
@@ -472,7 +488,11 @@ app.post('/api/generateShoppingList', aiLimiter, async function (req: any, res: 
             true
         );
 
-        const normalizedShoppingList = normalizeShoppingList(shoppingList);
+        const completedShoppingList = ensureRecipeIngredientsIncluded(
+            shoppingList,
+            requiredRecipeIngredients
+        );
+        const normalizedShoppingList = normalizeShoppingList(completedShoppingList);
         const shoppingListResponse = {
             ...normalizedShoppingList,
             sources: {
@@ -987,6 +1007,97 @@ function normalizeShoppingList(shoppingList: any) {
     return { categories: normalizedCategories };
 }
 
+function getRecipeIngredients(groups: any) {
+    return uniqueStrings(["soloSelezionati", "pochiExtra", "daComprare"]
+        .flatMap((groupKey) => Array.isArray(groups?.[groupKey]) ? groups[groupKey] : [])
+        .flatMap((recipe: any) => [
+            ...normalizeStringArray(recipe?.ingredienti),
+            ...normalizeStringArray(recipe?.ingredientiExtra)
+        ]));
+}
+
+function ensureRecipeIngredientsIncluded(shoppingList: any, requiredIngredients: string[]) {
+    const categories = Array.isArray(shoppingList?.categories)
+        ? shoppingList.categories.map((category: any) => ({
+            ...category,
+            items: Array.isArray(category?.items) ? [...category.items] : []
+        }))
+        : [];
+
+    for (const ingredient of requiredIngredients) {
+        const alreadyListed = categories.some((category: any) =>
+            category.items.some((item: any) => containsIngredient([String(item?.nome ?? "")], ingredient))
+        );
+        if (alreadyListed) {
+            continue;
+        }
+
+        const categoryName = guessShoppingCategory(ingredient);
+        let category = categories.find((item: any) => item?.categoria === categoryName);
+        if (!category) {
+            category = { categoria: categoryName, items: [] };
+            categories.push(category);
+        }
+        category.items.push({
+            nome: ingredient,
+            quantita: "q.b.",
+            motivo: "ricette"
+        });
+    }
+
+    return { ...shoppingList, categories };
+}
+
+function containsIngredient(ingredients: string[], target: string) {
+    const targetKey = normalizeIngredientKey(target);
+    return ingredients.some((ingredient) => normalizeIngredientKey(ingredient) === targetKey);
+}
+
+function normalizeIngredientKey(value: string) {
+    return value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLocaleLowerCase("it-IT")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+}
+
+function guessShoppingCategory(ingredient: string) {
+    const name = normalizeIngredientKey(ingredient);
+    const includesAny = (terms: string[]) => terms.some((term) => name.includes(term));
+
+    if (includesAny(["surgelat", "congelat"])) {
+        return "Surgelati";
+    }
+    if (includesAny([
+        "mela", "banana", "arancia", "limone", "lime", "frutta", "verdura", "insalata", "pomodor",
+        "patata", "cipolla", "aglio", "carota", "zucchin", "peperon", "spinac", "broccol", "cavol",
+        "melanzan", "cetriol", "fung", "sedano", "basilico", "prezzemolo", "coriandolo", "avocado",
+        "fragol", "bosco", "pera", "pesca", "uva", "ananas", "fagiolin"
+    ])) {
+        return "Frutta e verdura";
+    }
+    if (includesAny([
+        "pasta", "pane", "riso", "farina", "avena", "quinoa", "couscous", "orzo", "cereali", "tortilla",
+        "gallette", "cracker", "polenta", "mais", "semola", "noodle", "spaghetti", "fusilli", "penne"
+    ])) {
+        return "Pane pasta e cereali";
+    }
+    if (includesAny([
+        "pollo", "tacchino", "manzo", "vitello", "maiale", "carne", "pesce", "salmone", "tonno", "merluzzo",
+        "gamber", "sogliola", "uovo", "uova", "prosciutto", "salsiccia", "bacon", "acciuga"
+    ])) {
+        return "Carne pesce e uova";
+    }
+    if (includesAny([
+        "latte", "formaggio", "mozzarella", "parmigiano", "pecorino", "yogurt", "burro", "panna", "ricotta",
+        "feta", "provola", "mascarpone", "grana", "gorgonzola"
+    ])) {
+        return "Latticini";
+    }
+    return "Dispensa";
+}
+
 function hasGeneratedRecipeContent(groups: any) {
     return ["soloSelezionati", "pochiExtra", "daComprare"]
         .some((groupKey) => Array.isArray(groups?.[groupKey]) && groups[groupKey].length > 0);
@@ -1038,13 +1149,21 @@ function sameStringSet(first: any, second: any) {
     return JSON.stringify(normalizedFirst) === JSON.stringify(normalizedSecond);
 }
 
-function createShoppingListSignature(availableIngredients: string[], weekProgram: any, recipes: any) {
+function createShoppingListSignature(
+    availableIngredients: string[],
+    sources: { weekProgram: boolean; recipes: boolean },
+    weekProgram: any,
+    recipes: any
+) {
     return JSON.stringify({
         availableIngredients: normalizeSignatureArray(availableIngredients),
-        weekProgramUpdatedAt: normalizeDateForSignature(weekProgram?.updatedAt),
-        recipesUpdatedAt: normalizeDateForSignature(recipes?.updatedAt),
-        weekProgramStartDate: weekProgram?.startDate ?? "",
-        recipeIngredients: normalizeSignatureArray(normalizeStringArray(recipes?.sourceIngredients))
+        sources,
+        weekProgramUpdatedAt: sources.weekProgram ? normalizeDateForSignature(weekProgram?.updatedAt) : "",
+        recipesUpdatedAt: sources.recipes ? normalizeDateForSignature(recipes?.updatedAt) : "",
+        weekProgramStartDate: sources.weekProgram ? (weekProgram?.startDate ?? "") : "",
+        recipeIngredients: sources.recipes
+            ? normalizeSignatureArray(normalizeStringArray(recipes?.sourceIngredients))
+            : []
     });
 }
 

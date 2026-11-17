@@ -33,18 +33,23 @@ Backend Node.js, Express e TypeScript dell'app EatUp. Espone le API usate dal cl
 
 ```json
 {
-  "availableIngredients": ["pasta", "uova", "latte"]
+  "availableIngredients": ["pasta", "uova", "latte"],
+  "sources": {
+    "weekProgram": true,
+    "recipes": false
+  }
 }
 ```
 
+`sources` sceglie le fonti della generazione. Impostare entrambe a `true` combina piano settimanale e ricette; almeno una deve essere selezionata. Se il campo manca, vengono usate entrambe per compatibilita' con i client precedenti.
+
 Il server:
 
-1. recupera l'ultimo programma settimanale dell'utente;
-2. recupera le ultime ricette generate dall'utente;
-3. unisce gli ingredienti dichiarati disponibili con gli ingredienti sorgente delle ricette;
-4. chiede all'AI di creare una lista JSON evitando ingredienti gia' disponibili;
-5. normalizza la risposta in categorie con `nome`, `quantita` e `motivo`;
-6. restituisce anche le fonti usate (`recipes` e `weekProgram`).
+1. recupera il programma e le ricette selezionate dall'utente;
+2. unisce gli ingredienti dichiarati disponibili alle fonti selezionate;
+3. chiede all'AI di creare una lista JSON evitando ingredienti gia' disponibili;
+4. normalizza la risposta in categorie con `nome`, `quantita` e `motivo`;
+5. restituisce anche le fonti effettivamente usate (`recipes` e `weekProgram`).
 
 Esempio di risposta:
 

@@ -215,11 +215,11 @@ export function createEatUpAuthApi(
     getShoppingList: () => getJson<ShoppingListResponse>("shoppingList"),
     generateShoppingList: (
       availableIngredients: string[],
-      sources: ShoppingListSourceSelection,
+      sources?: ShoppingListSourceSelection,
     ) =>
       postJson<ShoppingListResponse>("generateShoppingList", {
         availableIngredients,
-        sources,
+        ...(sources ? { sources } : {}),
       }),
   };
 }
@@ -272,7 +272,7 @@ export const eatUpApi = {
     createEatUpAuthApi(configuredOrigin()).getShoppingList(),
   generateShoppingList: (
     availableIngredients: string[],
-    sources: ShoppingListSourceSelection,
+    sources?: ShoppingListSourceSelection,
   ) =>
     createEatUpAuthApi(configuredOrigin()).generateShoppingList(
       availableIngredients,
